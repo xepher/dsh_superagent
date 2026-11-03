@@ -1,0 +1,11 @@
+@page
+@model ErrorModel
+@{
+    ViewData["Title"] = "出错了";
+    ViewData["Subtitle"] = "系统没有掩盖失败。";
+}
+<div class="card">
+    <div class="card-header"><div><h2>请求处理失败</h2><p>@Model.Message</p></div></div>
+    <p class="muted">如果这是配置或 Provider 错误，请到「运行设置」与对应 Source 页面检查。服务不会为了继续运行而绕过授权或验证。</p>
+    <a class="btn" asp-page="/Index">返回概览</a>
+</div>

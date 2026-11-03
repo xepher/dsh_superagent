@@ -1,0 +1,87 @@
+@page "{id:guid}"
+@model DshSuperagent.Web.Pages.Admin.Sources.PolicyModel
+@using DshSuperagent.Domain.Sources
+@{
+    ViewData["Title"] = "Source Policy";
+    ViewData["Subtitle"] = "谁可以在这个 Source 上发起工作，以及准入表如何解释消息。";
+}
+
+<form method="post" class="card">
+    <div class="card-header">
+        <div>
+            <h2>@Model.Source.Name 的 Policy 部分</h2>
+            <p>当前全局 Policy v@(Model.PolicyVersion)，accept mode <code>@Model.AcceptMode</code>。保存会提升 Policy 版本。</p>
+        </div>
+        <div class="page-actions">
+            <a class="btn small" asp-page="/Admin/Sources/Edit" asp-route-id="@Model.Source.Id">Source 配置</a>
+            <a class="btn small" asp-page="/Admin/Policy/Index">全局 Policy</a>
+        </div>
+    </div>
+
+    <div class="form-grid">
+        <div class="field full">
+            <label>允许用户</label>
+            <textarea name="AllowedUsersText" class="code" style="min-height:150px"
+                      placeholder="userid, 显示名&#10;zhangsan, 张三&#10;lisi, 李四">@Model.AllowedUsersText</textarea>
+            <span class="hint">每行一个，格式 <code>userid</code> 或 <code>userid, 显示名</code>。为空时拒绝所有人。企业微信 userid 区分大小写不敏感。</span>
+        </div>
+        <div class="field">
+            <label>允许的机器人账号</label>
+            <textarea name="BotIdsText" class="code" placeholder="dependabot[bot]">@Model.BotIdsText</textarea>
+            <span class="hint">只允许这些机器人产生 <strong>inferred</strong> 候选；机器人永远不能发出明确请求或停止工单。</span>
+        </div>
+        <div class="field">
+            <label>接收范围</label>
+            <label class="check">
+                <input type="checkbox" name="ReceiveUnaddressed" value="true" checked="@Model.ReceiveUnaddressed" />
+                <span><label>接收未 @@ 智能体的消息</label><span class="hint">仅当 Provider 真的会投递全部消息时才有意义；企业微信群聊默认只投递 @@ 消息。</span></span>
+            </label>
+        </div>
+
+        <div class="field full">
+            <label>准入表（Admission table）</label>
+            <div class="grid-3">
+                <div class="field">
+                    <label>在允许列表、未 @@</label>
+                    <select name="ListedNotAddressed">
+                        @foreach (var choice in Enum.GetValues<AdmissionChoice>())
+                        {
+                            <option value="@choice" selected="@(choice == Model.ListedNotAddressed)">@choice</option>
+                        }
+                    </select>
+                </div>
+                <div class="field">
+                    <label>不在列表、@@ 了</label>
+                    <select name="UnlistedAddressed">
+                        @foreach (var choice in Enum.GetValues<AdmissionChoice>())
+                        {
+                            <option value="@choice" selected="@(choice == Model.UnlistedAddressed)">@choice</option>
+                        }
+                    </select>
+                </div>
+                <div class="field">
+                    <label>不在列表、未 @@</label>
+                    <select name="UnlistedNotAddressed">
+                        @foreach (var choice in Enum.GetValues<AdmissionChoice>())
+                        {
+                            <option value="@choice" selected="@(choice == Model.UnlistedNotAddressed)">@choice</option>
+                        }
+                    </select>
+                </div>
+            </div>
+            <span class="hint">
+                <strong>Explicit</strong> 是明确请求；<strong>Inferred</strong> 需要 Eval 研判且受 accept mode 限制；<strong>Ignore</strong> 直接丢弃。
+                允许列表内的人明确 @@ 智能体时始终是 explicit，不受 accept mode 限制。
+            </span>
+        </div>
+    </div>
+
+    <div class="form-actions">
+        <a class="btn" asp-page="Index">返回</a>
+        <button class="btn primary" type="submit">保存并提升 Policy 版本</button>
+    </div>
+</form>
+
+<div class="callout warning">
+    缩小允许列表或准入表不会立即撤销运行中的 Mandate。工单结束时保留 Mandate，下一次人工跟进恢复前会重新校验；不再满足条件时消息会回到 Eval。
+</div>

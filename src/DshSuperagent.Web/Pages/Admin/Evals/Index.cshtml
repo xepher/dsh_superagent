@@ -1,0 +1,56 @@
+@page
+@model DshSuperagent.Web.Pages.Admin.Evals.IndexModel
+@using DshSuperagent.Domain.Authorization
+@{
+    ViewData["Title"] = "Eval / Decision";
+    ViewData["Subtitle"] = "Eval 是唯一能创建工单的地方；Decision 说明为什么接单、忽略或停止。";
+}
+
+<div class="stats">
+    <div class="stat accent"><div class="stat-label">接单</div><div class="stat-value">@Model.AcceptCount</div><div class="stat-foot">最近 200 条 Eval</div></div>
+    <div class="stat teal"><div class="stat-label">忽略</div><div class="stat-value">@Model.IgnoreCount</div><div class="stat-foot">包括未命中规则</div></div>
+    <div class="stat amber"><div class="stat-label">本可接单</div><div class="stat-value">@Model.WouldAcceptCount</div><div class="stat-foot">observe 模式下只记录</div></div>
+    <div class="stat rose"><div class="stat-label">Unavailable</div><div class="stat-value">@Model.UnavailableCount</div><div class="stat-foot">需要人检查或重新评估</div></div>
+</div>
+
+<div class="card tight">
+    <div class="card-header" style="padding:20px 22px 0">
+        <div><h2>Decision 记录</h2><p>最新的 Eval 在前；打开 Thread 可重新评估。</p></div>
+    </div>
+    @if (Model.Evals.Count == 0)
+    {
+        <div class="empty"><div class="mark">⌁</div><strong>还没有 Eval</strong><p>Source 收到 Trigger 后会在这里留下研判记录。</p></div>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="table">
+                <thead><tr><th>决定</th><th>Thread</th><th>理由</th><th>Policy</th><th>时间</th></tr></thead>
+                <tbody>
+                @foreach (var eval in Model.Evals)
+                {
+                    <tr>
+                        <td>
+                            <span class="badge @(eval.Status == EvalStatus.Unavailable ? "danger" : eval.Decision == DecisionKind.Accept ? "success" : eval.Decision == DecisionKind.Stop ? "danger" : "neutral")">
+                                @(eval.Status == EvalStatus.Unavailable ? "Unavailable" : eval.Decision?.ToString() ?? eval.Status.ToString())
+                            </span>
+                            @if (eval.WouldAccept)
+                            {
+                                <span class="badge warning" style="margin-left:4px">would accept</span>
+                            }
+                        </td>
+                        <td><a asp-page="/Admin/Threads/Detail" asp-route-id="@eval.ThreadId">@eval.ThreadTitle</a></td>
+                        <td>@(eval.Reason ?? "—")</td>
+                        <td class="mono">v@eval.PolicyVersion</td>
+                        <td class="muted nowrap">@eval.CreatedAt.ToLocalTime().ToString("MM-dd HH:mm")</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<div class="callout">
+    <strong>observe</strong> 是默认的起点：推断候选仍会被研判，但正的结论只记录为 <code>would accept</code>，不会创建工单。确认记录可信后，再到 Policy 切换 <code>auto</code>。
+</div>

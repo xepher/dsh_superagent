@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\DshSuperagent.Core\DshSuperagent.Core.csproj" />
+    <ProjectReference Include="..\DshSuperagent.Providers.WeCom\DshSuperagent.Providers.WeCom.csproj" />
+    <ProjectReference Include="..\DshSuperagent.Providers.OpenAiCompatible\DshSuperagent.Providers.OpenAiCompatible.csproj" />
+    <ProjectReference Include="..\DshSuperagent.Providers.GitHub\DshSuperagent.Providers.GitHub.csproj" />
+    <ProjectReference Include="..\DshSuperagent.Domain\DshSuperagent.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.*" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <!-- Composition root: Web hosts the panel and infrastructure adapters; Domain and Application stay framework-light. -->
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>

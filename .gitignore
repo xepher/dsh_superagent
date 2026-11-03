@@ -1,0 +1,29 @@
+# Build
+bin/
+obj/
+publish/
+
+# Runtime state (contains SQLite DB and Data Protection keys)
+App_Data/
+*.db
+*.db-shm
+*.db-wal
+
+# IDE
+.vs/
+.idea/
+*.user
+*.suo
+
+# Tests
+TestResults/
+coverage/
+*.trx
+
+# Local scratch
+.tmp-*
+node_modules/
+
+# OS
+Thumbs.db
+.DS_Store

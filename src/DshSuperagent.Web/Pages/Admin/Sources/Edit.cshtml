@@ -1,0 +1,142 @@
+@page
+@model DshSuperagent.Web.Pages.Admin.Sources.EditModel
+@{
+    ViewData["Title"] = Model.IsNew ? "新增 Source" : "编辑 Source";
+    ViewData["Subtitle"] = "Provider 负责传输，Source 只保存身份、配置与读取位置。";
+}
+
+<form method="post" class="card">
+    <div class="card-header">
+        <div>
+            <h2>@(Model.IsNew ? "新建 Source" : Model.Form.Name)</h2>
+            <p>@(Model.SelectedProvider?.Description ?? "选择一个 Source Provider。")</p>
+        </div>
+        @if (!Model.IsNew)
+        {
+            <div class="page-actions">
+                <a class="btn small" asp-page="/Admin/Sources/Policy" asp-route-id="@Model.Form.Id">允许用户与准入表</a>
+            </div>
+        }
+    </div>
+
+    <div asp-validation-summary="All" class="alert error" style="display:@(ViewData.ModelState.ErrorCount > 0 ? "block" : "none")"></div>
+
+    <input type="hidden" asp-for="Form.Id" />
+    <div class="form-grid">
+        <div class="field">
+            <label asp-for="Form.Name">名称<span class="required">*</span></label>
+            <input asp-for="Form.Name" placeholder="例如：企业微信 · 研发群" />
+        </div>
+        <div class="field">
+            <label>Provider<span class="required">*</span></label>
+            @if (Model.IsNew)
+            {
+                <select asp-for="Form.ProviderId" onchange="window.location.search='?provider='+encodeURIComponent(this.value)">
+                    @foreach (var provider in Model.Providers)
+                    {
+                        <option value="@provider.Id" selected="@(provider.Id == Model.Form.ProviderId)">@provider.DisplayName</option>
+                    }
+                </select>
+            }
+            else
+            {
+                <input value="@Model.SelectedProvider?.DisplayName" disabled />
+                <input type="hidden" asp-for="Form.ProviderId" />
+                <span class="hint">已存在的 Source 不能更换 Provider。</span>
+            }
+        </div>
+        <div class="field">
+            <label asp-for="Form.DefaultRepositoryId">默认代码仓库</label>
+            <select asp-for="Form.DefaultRepositoryId">
+                <option value="">— 未指定 —</option>
+                @foreach (var repository in Model.Repositories)
+                {
+                    <option value="@repository.Id" selected="@(repository.Id == Model.Form.DefaultRepositoryId)">@repository.DisplayName（@repository.Slug）</option>
+                }
+            </select>
+            <span class="hint">没有指定时，只有唯一启用仓库才会自动选中。</span>
+        </div>
+        <div class="field">
+            <label>状态</label>
+            <label class="check">
+                <input asp-for="Form.Enabled" type="checkbox" />
+                <span><label asp-for="Form.Enabled">启用这个 Source</label><span class="hint">停用后回调返回 404，已经排队的消息等待恢复。</span></span>
+            </label>
+        </div>
+
+        @if (Model.SelectedProvider is not null)
+        {
+            foreach (var field in Model.SelectedProvider.ConfigFields)
+            {
+                <div class="field @(field.Type is DshSuperagent.Core.Providers.Sources.ProviderFieldType.TextArea ? "full" : "")">
+                    <label>@field.Label @if (field.Required) { <span class="required">*</span> }</label>
+                    @switch (field.Type)
+                    {
+                        case DshSuperagent.Core.Providers.Sources.ProviderFieldType.Secret:
+                            <input type="password" name="Config_@field.Key" value="" autocomplete="new-password"
+                                   placeholder="@(Model.IsSecretConfigured(field.Key) ? "已配置，留空保持不变" : field.Placeholder ?? "请输入密钥")" />
+                            if (Model.IsSecretConfigured(field.Key))
+                            {
+                                <label class="check" style="margin-top:4px">
+                                    <input type="checkbox" name="clear_@field.Key" value="true" />
+                                    <span><label>清除已保存的密钥</label></span>
+                                </label>
+                            }
+                            break;
+                        case DshSuperagent.Core.Providers.Sources.ProviderFieldType.Bool:
+                            <label class="check">
+                                <input type="checkbox" name="Config_@field.Key" value="true" checked="@Model.BoolValue(field.Key)" />
+                                <span><label>@field.Label</label><span class="hint">@field.Help</span></span>
+                            </label>
+                            break;
+                        case DshSuperagent.Core.Providers.Sources.ProviderFieldType.Select:
+                            <select name="Config_@field.Key">
+                                @foreach (var option in field.Options ?? [])
+                                {
+                                    <option value="@option.Value" selected="@(option.Value == Model.ConfigValue(field.Key))">@option.Label</option>
+                                }
+                            </select>
+                            break;
+                        case DshSuperagent.Core.Providers.Sources.ProviderFieldType.TextArea:
+                            <textarea name="Config_@field.Key" class="code">@Model.ConfigValue(field.Key)</textarea>
+                            break;
+                        default:
+                            <input name="Config_@field.Key"
+                                   type="@(field.Type == DshSuperagent.Core.Providers.Sources.ProviderFieldType.Number ? "number" : "text")"
+                                   value="@Model.ConfigValue(field.Key)"
+                                   placeholder="@field.Placeholder" />
+                            break;
+                    }
+                    @if (!string.IsNullOrWhiteSpace(field.Help) && field.Type != DshSuperagent.Core.Providers.Sources.ProviderFieldType.Bool)
+                    {
+                        <span class="hint">@field.Help</span>
+                    }
+                </div>
+            }
+        }
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(Model.CallbackUrl))
+    {
+        <div class="callout" style="margin-top:18px">
+            <strong>回调 URL</strong>（企业微信后台填写）
+            <div class="copy-row" style="margin-top:8px">
+                <input value="@Model.CallbackUrl" readonly />
+                <button type="button" class="btn small" data-copy="@Model.CallbackUrl">复制</button>
+            </div>
+        </div>
+    }
+
+    <div class="form-actions">
+        <a class="btn" asp-page="Index">取消</a>
+        @if (!Model.IsNew)
+        {
+            <button type="submit" asp-page-handler="Test" class="btn">测试配置</button>
+        }
+        <button type="submit" class="btn primary">保存</button>
+    </div>
+</form>
+
+<div class="callout">
+    Source 配置变化只影响读取什么事件；<strong>允许谁触发工作、准入表和 accept mode 属于 Policy</strong>，保存时会提升 Policy 版本。
+</div>

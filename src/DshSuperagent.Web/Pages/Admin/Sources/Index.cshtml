@@ -1,0 +1,104 @@
+@page
+@model DshSuperagent.Web.Pages.Admin.Sources.IndexModel
+@{
+    ViewData["Title"] = "Source";
+    ViewData["Subtitle"] = "Source 是事件的入口；Provider 只是传输适配器。";
+}
+
+<div class="card">
+    <div class="card-header">
+        <div>
+            <h2>已配置的 Source</h2>
+            <p>每个 Source 有自己的 Provider、读取位置和 Policy 部分（允许列表与准入表）。</p>
+        </div>
+        <div class="page-actions">
+            <a class="btn small" asp-page="/Admin/Policy/Index">全局 Policy</a>
+            <a class="btn primary small" asp-page="/Admin/Sources/Edit">新增 Source</a>
+        </div>
+    </div>
+
+    @if (Model.Sources.Count == 0)
+    {
+        <div class="empty">
+            <div class="mark">↣</div>
+            <strong>还没有 Source</strong>
+            <p>先配置企业微信智能机器人，或让代码扫描 Source 由定时任务创建。</p>
+            <a class="btn primary" asp-page="/Admin/Sources/Edit">新增 Source</a>
+        </div>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="table">
+                <thead>
+                <tr>
+                    <th>Source</th>
+                    <th>状态</th>
+                    <th>允许用户 / 机器人</th>
+                    <th>默认仓库</th>
+                    <th>回调</th>
+                    <th>最近读取</th>
+                    <th></th>
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (var source in Model.Sources)
+                {
+                    <tr>
+                        <td>
+                            <div class="cell-title">@source.Name</div>
+                            <div class="cell-sub"><code>@source.ProviderId</code> · @source.ProviderDisplayName</div>
+                            @if (source.HasConfigIssue)
+                            {
+                                <span class="badge danger" style="margin-top:5px">配置不完整</span>
+                            }
+                        </td>
+                        <td>
+                            <span class="badge @(source.Enabled ? "success" : "neutral")">@(source.Enabled ? "启用" : "停用")</span>
+                        </td>
+                        <td>
+                            <span class="badge info">@source.AllowedUsers 人</span>
+                            <span class="badge neutral">@source.BotIds 机器人</span>
+                            @if (source.AllowedUsers == 0)
+                            {
+                                <div class="cell-sub" style="color:var(--danger)">允许列表为空，所有用户都会被拒绝</div>
+                            }
+                        </td>
+                        <td class="muted">@(source.DefaultRepositoryName ?? "—")</td>
+                        <td>
+                            @if (source.IsCallback)
+                            {
+                                <div class="copy-row">
+                                    <input value="@source.CallbackUrl" readonly aria-label="回调 URL" />
+                                    <button type="button" class="btn small" data-copy="@source.CallbackUrl">复制</button>
+                                </div>
+                            }
+                            else
+                            {
+                                <span class="muted small">由内部任务触发</span>
+                            }
+                        </td>
+                        <td class="muted small">@(source.ReadPosition ?? "—")</td>
+                        <td>
+                            <div class="actions">
+                                <a class="btn small" asp-page="/Admin/Sources/Policy" asp-route-id="@source.Id">策略</a>
+                                <a class="btn small" asp-page="/Admin/Sources/Edit" asp-route-id="@source.Id">编辑</a>
+                                <form method="post" asp-page-handler="Test" asp-route-id="@source.Id" class="inline-form">
+                                    <button type="submit" class="btn small">测试</button>
+                                </form>
+                                <form method="post" asp-page-handler="Delete" asp-route-id="@source.Id" class="inline-form" data-confirm="删除 Source？已有 Thread 历史时会被拒绝。">
+                                    <button type="submit" class="btn small danger">删除</button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<div class="callout">
+    企业微信只是 <code>wecom-aibot</code> Provider。领域层只看到 <code>Source</code> 产生的 <code>InboundEvent</code>，以及写回用的 <code>ChannelAddress</code>；换一个 Provider 不需要改 Eval、Mandate 或 Ticket。
+</div>

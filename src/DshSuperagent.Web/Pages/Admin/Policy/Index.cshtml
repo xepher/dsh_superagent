@@ -1,0 +1,102 @@
+@page
+@model DshSuperagent.Web.Pages.Admin.Policy.IndexModel
+@using DshSuperagent.Domain.Sources
+@{
+    ViewData["Title"] = "Policy";
+    ViewData["Subtitle"] = "版本化的授权规则：谁可以发起工作、推断候选如何被研判。";
+}
+
+<form method="post" class="card">
+    <div class="card-header">
+        <div>
+            <h2>全局 Policy v@(Model.Version)</h2>
+            <p>最近更新 @Model.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")。每次保存提升版本，Mandate 记录接受时的版本。</p>
+        </div>
+        <a class="btn small" asp-page="/Admin/Sources/Index">Source 策略</a>
+    </div>
+
+    <div class="form-grid">
+        <div class="field">
+            <label>Accept mode</label>
+            <select asp-for="AcceptMode">
+                <option value="@AcceptMode.Off">off — 只接受明确请求</option>
+                <option value="@AcceptMode.Observe">observe — 研判推断候选，只记录“本可接单”</option>
+                <option value="@AcceptMode.Auto">auto — 研判通过后自动接单</option>
+            </select>
+            <span class="hint">明确请求始终有效。推断候选包括机器人/定时扫描，或未列入允许列表的跟进。</span>
+        </div>
+    </div>
+
+    <div class="divider"></div>
+    <div class="card-header">
+        <div><h2>Proactive 规则</h2><p>Eval 对每条启用规则逐一判断；推断接单至少命中一条。规则文本会进入 Executor 的 Mandate 说明。</p></div>
+    </div>
+    @if (Model.Rules.Count == 0)
+    {
+        <p class="muted">没有规则；只有明确请求能创建工单。</p>
+    }
+    <div class="table-wrap">
+        <table class="table">
+            <thead><tr><th style="width:170px">规则名</th><th>指令</th><th style="width:70px">启用</th><th style="width:70px">删除</th></tr></thead>
+            <tbody>
+            @for (var index = 0; index < Model.Rules.Count; index++)
+            {
+                <tr>
+                    <td>
+                        <input type="hidden" asp-for="Rules[index].Id" />
+                        <input asp-for="Rules[index].Name" placeholder="code-quality" />
+                    </td>
+                    <td><textarea asp-for="Rules[index].Instruction" class="code" style="min-height:64px" placeholder="当...时，创建...工单。"></textarea></td>
+                    <td style="text-align:center"><input asp-for="Rules[index].Enabled" type="checkbox" /></td>
+                    <td style="text-align:center"><input asp-for="Rules[index].Remove" type="checkbox" /></td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+
+    <div class="form-actions">
+        <a class="btn" asp-page="/Index">取消</a>
+        <button class="btn primary" type="submit">保存并提升 Policy 版本</button>
+    </div>
+</form>
+
+<section class="card tight">
+    <div class="card-header" style="padding:20px 22px 0">
+        <div><h2>各 Source 的 Policy 部分</h2><p>允许列表、机器人列表与准入表属于 Policy；Provider 配置不属于。</p></div>
+    </div>
+    @if (Model.SourcePolicies.Count == 0)
+    {
+        <div class="empty"><div class="mark">⌘</div><strong>还没有 Source Policy</strong><p>新增 Source 后在这里配置允许用户和准入表。</p></div>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="table">
+                <thead><tr><th>Source</th><th>允许用户</th><th>机器人</th><th>准入表（列表未@@ / 未列表@@ / 未列表未@@）</th><th></th></tr></thead>
+                <tbody>
+                @foreach (var part in Model.SourcePolicies)
+                {
+                    <tr>
+                        <td>@part.SourceName</td>
+                        <td><span class="badge info">@part.AllowedUsers 人</span></td>
+                        <td><span class="badge neutral">@part.BotIds 个</span></td>
+                        <td class="small">
+                            @part.ListedNotAddressed / @part.UnlistedAddressed / @part.UnlistedNotAddressed
+                            @if (part.ReceiveUnaddressed)
+                            {
+                                <span class="badge warning">接收未 @@</span>
+                            }
+                        </td>
+                        <td><a class="btn small" asp-page="/Admin/Sources/Policy" asp-route-id="@part.SourceId">编辑</a></td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+<div class="callout warning">
+    Policy 变化不会立即撤销运行中的 Mandate，但会：① 丢弃旧版本的运行中 Eval 并重新排队；② 在工单下一次恢复前重新校验 Mandate；③ 让旧版本下匹配的规则不再自动成立。
+</div>

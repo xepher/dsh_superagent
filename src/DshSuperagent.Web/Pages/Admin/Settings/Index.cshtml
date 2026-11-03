@@ -1,0 +1,63 @@
+@page
+@model DshSuperagent.Web.Pages.Admin.Settings.IndexModel
+@{
+    ViewData["Title"] = "运行设置";
+    ViewData["Subtitle"] = "执行器并发、扫描节奏、补丁验证与团队提示词。";
+}
+
+<form method="post" class="card">
+    <div class="card-header"><div><h2>执行与审查</h2><p>这些是部署与 Executor 设置，不属于 Policy；它们不改变谁能发起工作。</p></div></div>
+    <div class="form-grid">
+        <div class="field"><label>最大 Agent 工具轮次</label><input asp-for="Settings.MaxAgentIterations" type="number" min="1" max="16" /><span class="hint">问答/修复 Agent 的工具调用上限。</span></div>
+        <div class="field"><label>工具输出字符上限</label><input asp-for="Settings.MaxToolOutputChars" type="number" min="2000" max="40000" /></div>
+        <div class="field"><label>并发 Assignment</label><input asp-for="Settings.MaxConcurrentAssignments" type="number" min="1" max="8" /><span class="hint">当前 worker 在启动时读取；修改后重启服务生效。</span></div>
+        <div class="field"><label>定时审查间隔（小时）</label><input asp-for="Settings.ReviewIntervalHours" type="number" min="1" max="168" /><span class="hint">修改后重启服务生效。</span></div>
+        <div class="field"><label>单次扫描文件上限</label><input asp-for="Settings.MaxReviewFiles" type="number" min="1" max="2000" /></div>
+        <div class="field"><label>补丁验证超时（秒）</label><input asp-for="Settings.PatchValidationTimeoutSeconds" type="number" min="10" max="900" /></div>
+        <div class="field"><label>每批自动修复上限</label><input asp-for="Settings.MaxAutoFixesPerRun" type="number" min="1" max="5" /></div>
+        <div class="field"><label>定时审查总开关</label><label class="check"><input asp-for="Settings.AutoReviewEnabled" type="checkbox" /><span><label>允许定时扫描</label><span class="hint">仍需要每个仓库自己的「定时审查」开关。</span></span></label></div>
+    </div>
+
+    <div class="divider"></div>
+    <div class="card-header"><div><h2>团队提示词</h2><p>这些文字进入 Executor/主流程，但不能覆盖代码强制的 Gate、Mandate 与 Policy。</p></div></div>
+    <div class="form-grid">
+        <div class="field full"><label>Communication</label><textarea asp-for="Prompts.Communication" style="min-height:90px"></textarea></div>
+        <div class="field full"><label>Ticket scope</label><textarea asp-for="Prompts.TicketScope" style="min-height:90px"></textarea></div>
+        <div class="field full"><label>Delivery requirements</label><textarea asp-for="Prompts.DeliveryRequirements" style="min-height:90px"></textarea></div>
+    </div>
+
+    <div class="form-actions">
+        <a class="btn" asp-page="/Admin/Policy/Index">打开 Policy</a>
+        <button class="btn primary" type="submit">保存运行设置</button>
+    </div>
+</form>
+
+<div class="grid-2">
+    <section class="card">
+        <div class="card-header"><div><h2>部署信息</h2><p>这些值来自宿主环境，不能通过聊天消息修改。</p></div></div>
+        <dl class="kv">
+            <dt>数据目录</dt><dd class="mono">@Model.DataDirectory</dd>
+            <dt>数据库</dt><dd class="mono">@Model.Database</dd>
+            <dt>已注册 Source Provider</dt><dd>@Model.SourceProviderCount</dd>
+            <dt>已注册模型 Provider</dt><dd>@Model.LlmProviderCount</dd>
+            <dt>已注册 PR Provider</dt><dd>@Model.PullRequestProviderCount</dd>
+            <dt>管理密码</dt><dd>@(Model.IsDefaultPassword ? "默认开发密码（生产必须设置 SUPERAGENT_ADMIN_PASSWORD）" : "已自定义")</dd>
+        </dl>
+    </section>
+    <section class="card">
+        <div class="card-header"><div><h2>最近问题</h2><p>只报告需要人处理或可采取行动的问题。</p></div></div>
+        <div class="checklist">
+            <a class="checklist-item @(Model.UnavailableEvals > 0 ? "todo" : "ok")" asp-page="/Admin/Evals/Index">
+                <span class="icon">@(Model.UnavailableEvals > 0 ? "!" : "✓")</span>
+                <span><strong>Unavailable Eval</strong><span>过去 24 小时 @Model.UnavailableEvals 条</span></span>
+            </a>
+            <a class="checklist-item @(Model.FailedMessages > 0 ? "todo" : "ok")" asp-page="/Admin/Tickets/Index">
+                <span class="icon">@(Model.FailedMessages > 0 ? "!" : "✓")</span>
+                <span><strong>失败 Channel 消息</strong><span>@Model.FailedMessages 条连续失败 3 次以上</span></span>
+            </a>
+        </div>
+        <div class="callout" style="margin-top:16px">
+            API Key、GitHub Token 与 EncodingAESKey 都通过 Data Protection 加密存储；日志和模型提示词中不会出现明文。
+        </div>
+    </section>
+</div>

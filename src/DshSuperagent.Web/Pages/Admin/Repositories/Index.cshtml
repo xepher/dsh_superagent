@@ -1,0 +1,92 @@
+@page
+@model DshSuperagent.Web.Pages.Admin.Repositories.IndexModel
+@{
+    ViewData["Title"] = "代码仓库";
+    ViewData["Subtitle"] = "执行器读取的代码目录、审查开关与 PR 目标。";
+}
+
+<div class="card">
+    <div class="card-header">
+        <div>
+            <h2>已配置仓库</h2>
+            <p>代码仓库是执行器的输入；定时扫描会把它发现的问题变成 Source 的 Trigger。</p>
+        </div>
+        <div class="page-actions">
+            <a class="btn primary small" asp-page="/Admin/Repositories/Edit">新增仓库</a>
+        </div>
+    </div>
+
+    @if (Model.Repositories.Count == 0)
+    {
+        <div class="empty">
+            <div class="mark">⌂</div>
+            <strong>还没有代码仓库</strong>
+            <p>配置一个服务器上可读的 Git 目录，执行器才能回答问题或生成修复。</p>
+            <a class="btn primary" asp-page="/Admin/Repositories/Edit">新增仓库</a>
+        </div>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="table">
+                <thead>
+                <tr><th>仓库</th><th>路径</th><th>状态</th><th>审查 / 修复</th><th>PR 目标</th><th>工单</th><th></th></tr>
+                </thead>
+                <tbody>
+                @foreach (var repository in Model.Repositories)
+                {
+                    <tr>
+                        <td>
+                            <div class="cell-title">@repository.DisplayName</div>
+                            <div class="cell-sub"><code>@repository.Slug</code></div>
+                        </td>
+                        <td>
+                            <div class="mono">@repository.LocalPath</div>
+                            <div class="cell-sub">
+                                @if (!repository.PathExists)
+                                {
+                                    <span class="badge danger">目录不存在</span>
+                                }
+                                else if (!repository.IsGit)
+                                {
+                                    <span class="badge warning">不是 Git 仓库</span>
+                                }
+                                else
+                                {
+                                    <span class="badge success">Git 可用</span>
+                                }
+                            </div>
+                        </td>
+                        <td><span class="badge @(repository.Enabled ? "success" : "neutral")">@(repository.Enabled ? "启用" : "停用")</span></td>
+                        <td>
+                            <span class="badge @(repository.AutoReviewEnabled ? "info" : "neutral")">定时审查 @(repository.AutoReviewEnabled ? "开" : "关")</span>
+                            <span class="badge @(repository.AllowAutonomousFix ? "warning" : "neutral")">自动修复 @(repository.AllowAutonomousFix ? "开" : "关")</span>
+                            @if (repository.AllowAutonomousFix && repository.AutoReviewEnabled)
+                            {
+                                <div class="cell-sub">需要 Policy accept mode = auto 才会真正创建修复工单</div>
+                            }
+                        </td>
+                        <td class="muted mono">@(repository.PullRequestTarget ?? "—")</td>
+                        <td>@repository.TicketCount</td>
+                        <td>
+                            <div class="actions">
+                                <form method="post" asp-page-handler="Scan" asp-route-id="@repository.Id" class="inline-form">
+                                    <button class="btn small" type="submit">立即扫描</button>
+                                </form>
+                                <a class="btn small" asp-page="/Admin/Repositories/Edit" asp-route-id="@repository.Id">编辑</a>
+                                <form method="post" asp-page-handler="Delete" asp-route-id="@repository.Id" class="inline-form" data-confirm="删除这个仓库？已有工单时会被拒绝。">
+                                    <button class="btn small danger" type="submit">删除</button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<div class="callout">
+    定时审查是 <code>repository-scan</code> Source 的实现：它不绕过 Eval。每条发现都是不可变 Trigger，经过 Gate、研判和 Mandate 后才可能变成修复工单。
+</div>

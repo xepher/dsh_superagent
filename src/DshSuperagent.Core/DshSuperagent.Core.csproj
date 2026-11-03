@@ -1,0 +1,14 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\DshSuperagent.Domain\DshSuperagent.Domain.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <!-- Application layer: use cases and ports. Domain has no infrastructure references. -->
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

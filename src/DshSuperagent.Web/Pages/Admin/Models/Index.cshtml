@@ -1,0 +1,53 @@
+@page
+@model DshSuperagent.Web.Pages.Admin.Models.IndexModel
+@{
+    ViewData["Title"] = "模型服务";
+    ViewData["Subtitle"] = "LLM 也是 Provider；未配置时问答降级为本地检索，推断候选不会被自动接单。";
+}
+
+<div class="card">
+    <div class="card-header">
+        <div><h2>模型配置</h2><p>OpenAI 兼容接口，可用于 DeepSeek、Qwen、Ollama 等。</p></div>
+        <a class="btn primary small" asp-page="Edit">新增模型</a>
+    </div>
+    @if (Model.Models.Count == 0)
+    {
+        <div class="empty"><div class="mark">◇</div><strong>还没有模型</strong><p>配置一个默认模型，Eval 才能研判推断候选，Executor 才能完整回答业务逻辑。</p><a class="btn primary" asp-page="Edit">新增模型</a></div>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="table">
+                <thead><tr><th>名称</th><th>Provider</th><th>模型</th><th>状态</th><th></th></tr></thead>
+                <tbody>
+                @foreach (var item in Model.Models)
+                {
+                    <tr>
+                        <td><div class="cell-title">@item.Name</div><div class="cell-sub">@item.ProviderId</div></td>
+                        <td>@item.ProviderName</td>
+                        <td class="mono">@item.Model</td>
+                        <td>
+                            <span class="badge @(item.Enabled ? "success" : "neutral")">@(item.Enabled ? "启用" : "停用")</span>
+                            @if (item.IsDefault)
+                            {
+                                <span class="badge info">默认</span>
+                            }
+                        </td>
+                        <td>
+                            <div class="actions">
+                                <form method="post" asp-page-handler="Test" asp-route-id="@item.Id" class="inline-form"><button class="btn small" type="submit">测试</button></form>
+                                <a class="btn small" asp-page="Edit" asp-route-id="@item.Id">编辑</a>
+                                <form method="post" asp-page-handler="Delete" asp-route-id="@item.Id" class="inline-form" data-confirm="删除模型配置？"><button class="btn small danger" type="submit">删除</button></form>
+                            </div>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<div class="callout">
+    模型只参与 <strong>Assessment</strong> 和 <strong>Executor</strong>，不能改变 Gate、Mandate 或 Policy。模型输出属于外部文本，不能修改权限。
+</div>

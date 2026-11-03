@@ -1,0 +1,232 @@
+@page "{id:guid}"
+@model DshSuperagent.Web.Pages.Admin.Tickets.DetailModel
+@using DshSuperagent.Domain.Authorization
+@using DshSuperagent.Domain.Sources
+@using DshSuperagent.Domain.Work
+@{
+    ViewData["Title"] = Model.Ticket.Title;
+    ViewData["Subtitle"] = $"Ticket {Model.Ticket.Id.ToString("N")[..10]} · {Model.Repository.DisplayName}";
+    var latest = Model.Ticket.Reports.OrderByDescending(report => report.CreatedAt).FirstOrDefault();
+    string stageLabel(TicketStage stage) => stage switch
+    {
+        TicketStage.PersonDelivery => "输入投递失败",
+        TicketStage.PersonAnswer => "等待回答",
+        TicketStage.PersonReview => "等待复核",
+        TicketStage.PersonBlocked => "受阻",
+        TicketStage.PersonFailed => "失败",
+        TicketStage.WorkingQueued => "排队中",
+        TicketStage.Idle => "等待触发",
+        TicketStage.Working => "执行中",
+        _ => "已结束",
+    };
+    string stageBadge(TicketStage stage) => stage switch
+    {
+        TicketStage.PersonReview => "warning",
+        TicketStage.PersonBlocked or TicketStage.PersonFailed or TicketStage.PersonDelivery => "danger",
+        TicketStage.Working => "info",
+        TicketStage.WorkingQueued => "teal",
+        _ => "neutral",
+    };
+}
+
+<div class="page-actions" style="margin-bottom:16px">
+    <a class="btn small" asp-page="Index">返回工单</a>
+    @if (Model.OriginTrigger is not null)
+    {
+        <a class="btn small" asp-page="/Admin/Threads/Detail" asp-route-id="@Model.OriginTrigger.ThreadId">来源 Thread</a>
+    }
+    @if (Model.Ticket.Status == TicketStatus.Open)
+    {
+        <form method="post" asp-page-handler="Retry" asp-route-id="@Model.Ticket.Id" class="inline-form">
+            <button class="btn small" type="submit" disabled="@(Model.Ticket.ActiveAssignment is not null)">重试</button>
+        </form>
+        <form method="post" asp-page-handler="Start" asp-route-id="@Model.Ticket.Id" class="inline-form">
+            <button class="btn small" type="submit" disabled="@(Model.Ticket.ActiveAssignment is not null)">排入执行</button>
+        </form>
+        <form method="post" asp-page-handler="Stop" asp-route-id="@Model.Ticket.Id" class="inline-form" data-confirm="停止工单会撤回 Mandate；确定吗？">
+            <button class="btn small danger" type="submit">停止工单</button>
+        </form>
+    }
+</div>
+
+<div class="grid-2">
+    <section class="card">
+        <div class="card-header">
+            <div><h2>授权：Mandate</h2><p>工单凭什么可以工作，以及工作的范围。</p></div>
+            <span class="badge @(Model.Ticket.Mandate.IsActive ? "success" : "danger")">@(Model.Ticket.Mandate.IsActive ? "有效" : "已撤回 / 撤销")</span>
+        </div>
+        <dl class="kv">
+            <dt>请求者</dt><dd>@Model.Ticket.Mandate.Requester.DisplayName <span class="mono muted">@Model.Ticket.Mandate.Requester.Id</span></dd>
+            <dt>强度</dt><dd><span class="badge @(Model.Ticket.Mandate.Strength == TriggerStrength.Explicit ? "success" : "warning")">@Model.Ticket.Mandate.Strength</span></dd>
+            <dt>依据</dt><dd>@Model.Ticket.Mandate.Basis</dd>
+            <dt>范围</dt><dd>@(Model.Ticket.WorkKind == WorkKind.Fix ? "修复并创建可审查 PR" : "回答代码问题")</dd>
+            <dt>Policy 版本</dt><dd>v@Model.Ticket.Mandate.PolicyVersion（当前 v@Model.Policy.Version）</dd>
+            <dt>接收范围</dt><dd class="mono">@Model.Ticket.Mandate.ReceiptScope</dd>
+            <dt>命中规则</dt>
+            <dd>
+                @if (Model.Ticket.Mandate.MatchedRuleIds.Count == 0)
+                {
+                    <span class="muted">明确请求不需要规则</span>
+                }
+                else
+                {
+                    foreach (var ruleId in Model.Ticket.Mandate.MatchedRuleIds)
+                    {
+                        var rule = Model.Policy.Rules.FirstOrDefault(item => item.Id == ruleId);
+                        <span class="badge neutral">@(rule?.Name ?? ruleId.ToString())</span>
+                    }
+                }
+            </dd>
+            <dt>授予时间</dt><dd>@Model.Ticket.Mandate.GrantedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</dd>
+            @if (Model.Ticket.Mandate.WithdrawnAt is not null)
+            {
+                <dt>人工撤回</dt><dd class="muted">@Model.Ticket.Mandate.WithdrawnAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</dd>
+            }
+            @if (Model.Ticket.Mandate.RevokedAt is not null)
+            {
+                <dt>撤销原因</dt><dd class="muted">@Model.Ticket.Mandate.RevokedReason</dd>
+            }
+        </dl>
+    </section>
+
+    <section class="card">
+        <div class="card-header">
+            <div><h2>执行状态</h2><p>Ticket 自己定义阶段，不照搬 Executor Session。</p></div>
+            <span class="badge @stageBadge(Model.Ticket.Stage)">@stageLabel(Model.Ticket.Stage)</span>
+        </div>
+        <dl class="kv">
+            <dt>状态</dt><dd>@Model.Ticket.Status</dd>
+            <dt>结果</dt><dd>@(Model.Ticket.Outcome == TicketOutcome.None ? "—" : Model.Ticket.Outcome)</dd>
+            <dt>是否人工停止</dt><dd>@(Model.Ticket.StoppedByPerson ? "是" : "否")</dd>
+            <dt>创建</dt><dd>@Model.Ticket.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</dd>
+            <dt>结束</dt><dd>@(Model.Ticket.EndedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "—")</dd>
+            <dt>Delivery</dt><dd>@(Model.Ticket.DeliveryError ?? "正常")</dd>
+            <dt>订阅 Thread</dt><dd>@Model.Subscriptions.Count(subscription => subscription.DroppedAt is null) 个</dd>
+            <dt>PR</dt>
+            <dd>
+                @if (latest?.PullRequestUrl is { Length: > 0 })
+                {
+                    <a href="@latest.PullRequestUrl" target="_blank" rel="noopener noreferrer">@latest.PullRequestUrl</a>
+                }
+                else
+                {
+                    <span class="muted">—</span>
+                }
+            </dd>
+        </dl>
+        @if (Model.Ticket.Status == TicketStatus.Open && Model.Ticket.Stage == TicketStage.PersonReview)
+        {
+            <div class="callout warning" style="margin-top:12px">Executor 报告 ready 并附 PR，工单等待人工复核；合并后再由后续 Trigger 或人工跟进收尾。</div>
+        }
+    </section>
+</div>
+
+@if (latest is not null)
+{
+    <section class="card">
+        <div class="card-header">
+            <div><h2>最新报告：@latest.Kind</h2><p>@latest.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</p></div>
+            @if (Model.Patch is not null)
+            {
+                <a class="btn small" asp-page-handler="Patch" asp-route-id="@Model.Ticket.Id" asp-route-reportId="@latest.Id">下载补丁</a>
+            }
+        </div>
+        @MarkdownRenderer.Render(latest.Summary)
+        @if (!string.IsNullOrWhiteSpace(latest.HumanAction))
+        {
+            <div class="callout" style="margin-top:12px"><strong>需要人：</strong>@latest.HumanAction</div>
+        }
+        @if (Model.Patch is not null)
+        {
+            <details class="raw-details">
+                <summary>查看补丁（已验证）</summary>
+                <pre class="raw">@Model.Patch</pre>
+            </details>
+        }
+    </section>
+}
+
+<div class="grid-2">
+    <section class="card tight">
+        <div class="card-header" style="padding:20px 22px 0"><div><h2>Inputs</h2><p>消息在进入 Ticket 时先存储；只有拥有 Thread 的工单接收人工跟进。</p></div></div>
+        <div class="table-wrap">
+            <table class="table">
+                <thead><tr><th>类型</th><th>内容</th><th>投递 / 读取</th><th>时间</th></tr></thead>
+                <tbody>
+                @foreach (var input in Model.Ticket.Inputs.OrderByDescending(input => input.CreatedAt))
+                {
+                    <tr>
+                        <td><span class="badge neutral">@input.Kind</span></td>
+                        <td class="small">@input.Content</td>
+                        <td class="small muted">
+                            @(input.DeliveredAt is null ? "未投递" : "已投递")
+                            · @(input.ReadAt is null ? "未读取" : "已读取")
+                            @if (!string.IsNullOrWhiteSpace(input.DeliveryError))
+                            {
+                                <div style="color:var(--danger)">@input.DeliveryError</div>
+                            }
+                        </td>
+                        <td class="muted nowrap">@input.CreatedAt.ToLocalTime().ToString("MM-dd HH:mm")</td>
+                    </tr>
+                }
+                @if (Model.Ticket.Inputs.Count == 0)
+                {
+                    <tr><td colspan="4" class="muted">没有 Input。</td></tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="card tight">
+        <div class="card-header" style="padding:20px 22px 0"><div><h2>Assignments</h2><p>Executor 在领域外运行；每次尝试都留下记录。</p></div></div>
+        <div class="table-wrap">
+            <table class="table">
+                <thead><tr><th>Executor</th><th>状态</th><th>开始</th><th>结束</th></tr></thead>
+                <tbody>
+                @foreach (var assignment in Model.Ticket.Assignments.OrderByDescending(item => item.CreatedAt))
+                {
+                    <tr>
+                        <td class="mono">@assignment.ExecutorName</td>
+                        <td><span class="badge @(assignment.Status == AssignmentStatus.Running ? "info" : assignment.Status == AssignmentStatus.Ended ? "neutral" : "warning")">@assignment.Status</span></td>
+                        <td class="muted nowrap">@(assignment.StartedAt?.ToLocalTime().ToString("MM-dd HH:mm") ?? "—")</td>
+                        <td class="muted nowrap">@(assignment.EndedAt?.ToLocalTime().ToString("MM-dd HH:mm") ?? "—")</td>
+                    </tr>
+                }
+                @if (Model.Ticket.Assignments.Count == 0)
+                {
+                    <tr><td colspan="4" class="muted">没有 Assignment。</td></tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+
+<section class="card">
+    <div class="card-header"><div><h2>Channel 投递</h2><p>消息先存储再发送；失败按退避重试。</p></div></div>
+    @if (Model.Messages.Count == 0)
+    {
+        <p class="muted">还没有出站消息。</p>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="table">
+                <thead><tr><th>用途</th><th>状态</th><th>内容</th><th>尝试</th><th>时间</th></tr></thead>
+                <tbody>
+                @foreach (var message in Model.Messages)
+                {
+                    <tr>
+                        <td><span class="badge neutral">@message.Purpose</span></td>
+                        <td><span class="badge @(message.Status == DshSuperagent.Domain.Channels.MessageStatus.Sent ? "success" : message.Status == DshSuperagent.Domain.Channels.MessageStatus.Failed ? "danger" : "warning")">@message.Status</span></td>
+                        <td class="small">@message.Content</td>
+                        <td>@message.Attempts</td>
+                        <td class="muted nowrap">@message.CreatedAt.ToLocalTime().ToString("MM-dd HH:mm")</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>

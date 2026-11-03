@@ -1,0 +1,192 @@
+@page "{id:guid}"
+@model DshSuperagent.Web.Pages.Admin.Threads.DetailModel
+@using DshSuperagent.Domain.Authorization
+@using DshSuperagent.Domain.Channels
+@using DshSuperagent.Domain.Sources
+@using DshSuperagent.Domain.Threads
+@{
+    ViewData["Title"] = Model.Thread.Title;
+    ViewData["Subtitle"] = $"Source：{Model.Source.Name} · Thread {Model.Thread.Id.ToString("N")[..12]}";
+    string strengthBadge(TriggerStrength strength) => strength switch
+    {
+        TriggerStrength.Explicit => "success",
+        TriggerStrength.Inferred => "warning",
+        _ => "neutral",
+    };
+}
+
+<div class="page-actions" style="margin-bottom:16px">
+    <a class="btn small" asp-page="Index">返回 Thread</a>
+    <a class="btn small" asp-page="/Admin/Sources/Edit" asp-route-id="@Model.Source.Id">Source 配置</a>
+    <form method="post" asp-page-handler="Reevaluate" asp-route-id="@Model.Thread.Id" class="inline-form" data-confirm="用最新 Trigger 重新启动一次 Eval？">
+        <button class="btn small primary" type="submit" disabled="@(Model.Thread.ActiveEvalId is not null)">重新评估最新 Trigger</button>
+    </form>
+</div>
+
+<div class="grid-2">
+    <section class="card">
+        <div class="card-header"><div><h2>Thread 状态</h2><p>Eval 串行，新 Trigger 进入下一批。</p></div></div>
+        <dl class="kv">
+            <dt>外部键</dt><dd class="mono">@Model.Thread.ExternalKey</dd>
+            <dt>最近活动</dt><dd>@Model.Thread.LastActivityAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</dd>
+            <dt>运行中的 Eval</dt><dd>@(Model.Thread.ActiveEvalId?.ToString("N")[..12] ?? "—")</dd>
+            <dt>下一批 Trigger</dt><dd>@Model.Thread.PendingTriggerIds.Count</dd>
+            <dt>Trigger 总数</dt><dd>@Model.Triggers.Count（页面最多显示 100）</dd>
+        </dl>
+    </section>
+    <section class="card">
+        <div class="card-header"><div><h2>订阅</h2><p>Context-only 订阅只提供上下文，不授予权限，也不能恢复已结束工单。</p></div></div>
+        @if (Model.Subscriptions.Count == 0)
+        {
+            <p class="muted">没有工单订阅这个 Thread。</p>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table class="table">
+                    <thead><tr><th>工单</th><th>状态</th><th>类型</th><th>订阅</th></tr></thead>
+                    <tbody>
+                    @foreach (var subscription in Model.Subscriptions)
+                    {
+                        <tr>
+                            <td><a asp-page="/Admin/Tickets/Detail" asp-route-id="@subscription.TicketId">@subscription.Title</a></td>
+                            <td><span class="badge @(subscription.Status == "Open" ? "success" : "neutral")">@subscription.Status</span></td>
+                            <td>@subscription.Stage</td>
+                            <td>
+                                @if (subscription.DroppedAt is not null)
+                                {
+                                    <span class="badge neutral">已移除</span>
+                                }
+                                else if (subscription.ContextOnly)
+                                {
+                                    <span class="badge neutral">仅上下文</span>
+                                }
+                                else
+                                {
+                                    <span class="badge teal">拥有 Thread</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+</div>
+
+<section class="card">
+    <div class="card-header"><div><h2>Eval / Decision</h2><p>每次研判都是一条可审计记录；observe 模式下会记录“本可接单”。</p></div></div>
+    @if (Model.Evals.Count == 0)
+    {
+        <p class="muted">还没有 Eval。</p>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="table">
+                <thead><tr><th>状态</th><th>决定</th><th>理由</th><th>Policy</th><th>时间</th></tr></thead>
+                <tbody>
+                @foreach (var eval in Model.Evals)
+                {
+                    <tr>
+                        <td><span class="badge @(eval.Status == EvalStatus.Completed ? "success" : eval.Status == EvalStatus.Unavailable ? "danger" : "warning")">@eval.Status</span></td>
+                        <td>
+                            @if (eval.Decision is null)
+                            {
+                                <span class="muted">—</span>
+                            }
+                            else
+                            {
+                                <span class="badge @(eval.Decision.Kind == DecisionKind.Accept ? "success" : eval.Decision.Kind == DecisionKind.Stop ? "danger" : "neutral")">@eval.Decision.Kind</span>
+                                if (eval.Decision.WouldAccept)
+                                {
+                                    <span class="badge warning">would accept</span>
+                                }
+                            }
+                        </td>
+                        <td>
+                            <div>@(eval.Decision?.Reason ?? eval.Error ?? "—")</div>
+                            @if (eval.Decision is { MatchedRuleIds.Count: > 0 })
+                            {
+                                <div class="cell-sub">命中规则：@string.Join(", ", eval.Decision.MatchedRuleIds)</div>
+                            }
+                        </td>
+                        <td class="mono">v@eval.PolicyVersion</td>
+                        <td class="muted nowrap">@eval.CreatedAt.ToLocalTime().ToString("MM-dd HH:mm")</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+<section class="card">
+    <div class="card-header"><div><h2>Trigger 时间线</h2><p>最新在前。Trigger 不可变；Disposition 记录它为什么被过滤、研判或扇出。</p></div></div>
+    @if (Model.Triggers.Count == 0)
+    {
+        <p class="muted">还没有 Trigger。</p>
+    }
+    else
+    {
+        @foreach (var trigger in Model.Triggers)
+        {
+            var disposition = Model.Dispositions.TryGetValue(trigger.Id, out var value) ? value : null;
+            <div style="border-top:1px solid var(--border);padding:14px 0">
+                <div class="pill-row" style="justify-content:space-between">
+                    <div class="pill-row">
+                        <span class="badge neutral">@trigger.Actor.Kind</span>
+                        <span class="badge @strengthBadge(trigger.Strength)">@trigger.Strength</span>
+                        @if (trigger.Addressed)
+                        {
+                            <span class="badge info">@@ 了智能体</span>
+                        }
+                        @if (disposition is not null)
+                        {
+                            <span class="badge @(disposition.Kind == DispositionKind.Stopped ? "danger" : disposition.Kind == DispositionKind.OwnedByTicket ? "teal" : "neutral")">@disposition.Kind</span>
+                        }
+                    </div>
+                    <span class="muted small">@trigger.ReceivedAt.ToLocalTime().ToString("MM-dd HH:mm:ss")</span>
+                </div>
+                <div style="margin-top:6px"><strong>@trigger.Title</strong> <span class="muted mono">@trigger.ExternalId</span></div>
+                <div class="small" style="margin-top:4px;white-space:pre-wrap">@trigger.Text</div>
+                @if (disposition is not null)
+                {
+                    <div class="cell-sub">@disposition.Reason</div>
+                }
+                @if (!string.IsNullOrWhiteSpace(trigger.PayloadJson))
+                {
+                    <details class="raw-details">
+                        <summary>Source 事实（Payload）</summary>
+                        <pre class="raw">@trigger.PayloadJson</pre>
+                    </details>
+                }
+            </div>
+        }
+    }
+</section>
+
+@if (Model.Messages.Count > 0)
+{
+    <section class="card tight">
+        <div class="card-header" style="padding:20px 22px 0"><div><h2>Channel 消息</h2><p>先存储、再发送；失败按退避重试。</p></div></div>
+        <div class="table-wrap">
+            <table class="table">
+                <thead><tr><th>用途</th><th>状态</th><th>内容</th><th>尝试</th><th>时间</th></tr></thead>
+                <tbody>
+                @foreach (var message in Model.Messages)
+                {
+                    <tr>
+                        <td><span class="badge neutral">@message.Purpose</span></td>
+                        <td><span class="badge @(message.Status == MessageStatus.Sent ? "success" : message.Status == MessageStatus.Failed ? "danger" : "warning")">@message.Status</span></td>
+                        <td class="small">@message.Content</td>
+                        <td>@message.Attempts</td>
+                        <td class="muted nowrap">@message.CreatedAt.ToLocalTime().ToString("MM-dd HH:mm")</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </section>
+}
