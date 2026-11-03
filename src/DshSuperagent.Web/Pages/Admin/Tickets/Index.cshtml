@@ -1,0 +1,94 @@
+@page
+@model DshSuperagent.Web.Pages.Admin.Tickets.IndexModel
+@using DshSuperagent.Domain.Work
+@{
+    ViewData["Title"] = "工单 / 执行";
+    ViewData["Subtitle"] = "Ticket 是唯一被授权的工作单元；阶段说明它在等谁。";
+    string tab(string key) => Model.View == key ? "btn small primary" : "btn small";
+    string stageLabel(TicketStage stage) => stage switch
+    {
+        TicketStage.PersonDelivery => "输入投递失败",
+        TicketStage.PersonAnswer => "等待回答",
+        TicketStage.PersonReview => "等待复核",
+        TicketStage.PersonBlocked => "受阻",
+        TicketStage.PersonFailed => "失败",
+        TicketStage.WorkingQueued => "排队中",
+        TicketStage.Idle => "等待触发",
+        TicketStage.Working => "执行中",
+        _ => "已结束",
+    };
+    string badge(TicketStage stage) => stage switch
+    {
+        TicketStage.PersonReview => "warning",
+        TicketStage.PersonBlocked or TicketStage.PersonFailed or TicketStage.PersonDelivery => "danger",
+        TicketStage.Working => "info",
+        TicketStage.WorkingQueued => "teal",
+        _ => "neutral",
+    };
+}
+
+<div class="stats">
+    <div class="stat amber"><div class="stat-label">需要人</div><div class="stat-value">@Model.NeedsPerson</div><div class="stat-foot">回答、复核、受阻或投递失败</div></div>
+    <div class="stat accent"><div class="stat-label">开放工单</div><div class="stat-value">@Model.OpenCount</div><div class="stat-foot">最近 300 条中的开放工单</div></div>
+    <div class="stat teal"><div class="stat-label">已结束</div><div class="stat-value">@Model.EndedCount</div><div class="stat-foot">保留 Mandate 与订阅，可被人工跟进恢复</div></div>
+</div>
+
+<div class="card tight">
+    <div class="card-header" style="padding:20px 22px 0">
+        <div><h2>工单</h2><p>阶段由 Report、Input 和 Assignment 共同决定。</p></div>
+        <div class="page-actions">
+            <a class="@tab("person")" asp-page="Index" asp-route-view="person">需要人</a>
+            <a class="@tab("open")" asp-page="Index" asp-route-view="open">开放</a>
+            <a class="@tab("ended")" asp-page="Index" asp-route-view="ended">已结束</a>
+            <a class="@tab("all")" asp-page="Index" asp-route-view="all">全部</a>
+        </div>
+    </div>
+    @if (Model.Tickets.Count == 0)
+    {
+        <div class="empty"><div class="mark">◫</div><strong>没有匹配的工单</strong><p>明确请求或 Policy 接单后会生成工单。</p></div>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="table">
+                <thead><tr><th>工单</th><th>类型</th><th>阶段</th><th>仓库</th><th>Source</th><th>最新报告</th><th>更新时间</th></tr></thead>
+                <tbody>
+                @foreach (var ticket in Model.Tickets)
+                {
+                    <tr>
+                        <td>
+                            <a class="cell-title" asp-page="Detail" asp-route-id="@ticket.Id">@ticket.Title</a>
+                            <div class="cell-sub mono">@ticket.Id.ToString("N")[..10]</div>
+                        </td>
+                        <td>@(ticket.WorkKind == WorkKind.Fix ? "修复" : "问答")</td>
+                        <td>
+                            <span class="badge @badge(ticket.Stage)">@stageLabel(ticket.Stage)</span>
+                            @if (ticket.StoppedByPerson)
+                            {
+                                <span class="badge danger">人工停止</span>
+                            }
+                        </td>
+                        <td class="muted">@ticket.Repository</td>
+                        <td class="muted">@ticket.Source</td>
+                        <td>
+                            @if (ticket.PullRequestUrl is not null)
+                            {
+                                <a href="@ticket.PullRequestUrl" target="_blank" rel="noopener noreferrer">PR</a>
+                            }
+                            else
+                            {
+                                <span class="muted">@(ticket.LatestReport?.ToString() ?? "—")</span>
+                            }
+                        </td>
+                        <td class="muted nowrap">@ticket.UpdatedAt.ToLocalTime().ToString("MM-dd HH:mm")</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<div class="callout">
+    “等待复核”意味着 Executor 已经报告 <code>ready</code> 并附了 PR；打开 PR 人工复核后合并。补丁未创建 PR 的 <code>ready</code> 会按协议结束工单，并保留人工跟进可恢复的 Mandate。
+</div>

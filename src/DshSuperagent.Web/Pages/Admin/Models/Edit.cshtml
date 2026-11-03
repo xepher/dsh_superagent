@@ -1,0 +1,90 @@
+@page
+@model DshSuperagent.Web.Pages.Admin.Models.EditModel
+@using DshSuperagent.Core.Providers.Sources
+@{
+    ViewData["Title"] = Model.IsNew ? "新增模型" : "编辑模型";
+    ViewData["Subtitle"] = "模型是基础设施适配器；它不能修改授权或 Policy。";
+}
+
+<form method="post" class="card">
+    <div class="card-header">
+        <div><h2>@(Model.IsNew ? "新增模型" : Model.Form.Name)</h2><p>@(Model.SelectedProvider?.Description ?? "")</p></div>
+        <a class="btn small" asp-page="Index">返回</a>
+    </div>
+
+    <div asp-validation-summary="All" class="alert error" style="display:@(ViewData.ModelState.ErrorCount > 0 ? "block" : "none")"></div>
+    <input type="hidden" asp-for="Form.Id" />
+    <div class="form-grid">
+        <div class="field">
+            <label>名称<span class="required">*</span></label>
+            <input asp-for="Form.Name" placeholder="DeepSeek Chat" />
+        </div>
+        <div class="field">
+            <label>Provider</label>
+            @if (Model.IsNew)
+            {
+                <select asp-for="Form.ProviderId" onchange="window.location.search='?provider='+encodeURIComponent(this.value)">
+                    @foreach (var provider in Model.Providers)
+                    {
+                        <option value="@provider.Id" selected="@(provider.Id == Model.Form.ProviderId)">@provider.DisplayName</option>
+                    }
+                </select>
+            }
+            else
+            {
+                <input value="@Model.SelectedProvider?.DisplayName" disabled />
+                <input type="hidden" asp-for="Form.ProviderId" />
+            }
+        </div>
+        <div class="field">
+            <label>开关</label>
+            <label class="check"><input asp-for="Form.Enabled" type="checkbox" /><span><label>启用</label></span></label>
+            <label class="check" style="margin-top:6px"><input asp-for="Form.IsDefault" type="checkbox" /><span><label>设为默认模型</label><span class="hint">Eval 的 Assessment 与 Executor 都使用默认模型。</span></span></label>
+        </div>
+        @if (Model.SelectedProvider is not null)
+        {
+            foreach (var field in Model.SelectedProvider.ConfigFields)
+            {
+                <div class="field @(field.Type == ProviderFieldType.TextArea ? "full" : "")">
+                    <label>@field.Label @if (field.Required) { <span class="required">*</span> }</label>
+                    @switch (field.Type)
+                    {
+                        case ProviderFieldType.Secret:
+                            <input type="password" name="Config_@field.Key" value="" autocomplete="new-password"
+                                   placeholder="@(Model.IsSecretConfigured(field.Key) ? "已配置，留空保持不变" : "请输入")" />
+                            if (Model.IsSecretConfigured(field.Key))
+                            {
+                                <label class="check" style="margin-top:4px"><input type="checkbox" name="clear_@field.Key" value="true" /><span><label>清除已保存的密钥</label></span></label>
+                            }
+                            break;
+                        case ProviderFieldType.Bool:
+                            <label class="check"><input type="checkbox" name="Config_@field.Key" value="true" checked="@Model.BoolValue(field.Key)" /><span><label>@field.Label</label><span class="hint">@field.Help</span></span></label>
+                            break;
+                        case ProviderFieldType.Number:
+                            <input type="number" name="Config_@field.Key" value="@Model.ConfigValue(field.Key)" />
+                            break;
+                        case ProviderFieldType.TextArea:
+                            <textarea name="Config_@field.Key" class="code">@Model.ConfigValue(field.Key)</textarea>
+                            break;
+                        default:
+                            <input name="Config_@field.Key" value="@Model.ConfigValue(field.Key)" placeholder="@field.Placeholder" />
+                            break;
+                    }
+                    @if (!string.IsNullOrWhiteSpace(field.Help) && field.Type != ProviderFieldType.Bool)
+                    {
+                        <span class="hint">@field.Help</span>
+                    }
+                </div>
+            }
+        }
+    </div>
+
+    <div class="form-actions">
+        <a class="btn" asp-page="Index">取消</a>
+        @if (!Model.IsNew)
+        {
+            <a class="btn" asp-page="Index">到列表测试连接</a>
+        }
+        <button class="btn primary" type="submit">保存</button>
+    </div>
+</form>

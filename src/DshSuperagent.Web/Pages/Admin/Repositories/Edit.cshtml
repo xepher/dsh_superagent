@@ -1,0 +1,99 @@
+@page
+@model DshSuperagent.Web.Pages.Admin.Repositories.EditModel
+@{
+    ViewData["Title"] = Model.IsNew ? "新增代码仓库" : "编辑代码仓库";
+    ViewData["Subtitle"] = "执行器只读取这个目录；所有补丁先在临时 worktree 中验证。";
+}
+
+<form method="post" class="card">
+    <div class="card-header">
+        <div>
+            <h2>@(Model.IsNew ? "新增代码仓库" : Model.Form.DisplayName)</h2>
+            <p>路径、分支与验证命令属于部署配置，不属于 Policy。</p>
+        </div>
+        @if (!Model.IsNew)
+        {
+            <a class="btn small" asp-page="/Admin/Repositories/Index">返回列表</a>
+        }
+    </div>
+
+    <div asp-validation-summary="All" class="alert error" style="display:@(ViewData.ModelState.ErrorCount > 0 ? "block" : "none")"></div>
+
+    <input type="hidden" asp-for="Form.Id" />
+    <div class="form-grid">
+        <div class="field">
+            <label>Slug<span class="required">*</span></label>
+            <input asp-for="Form.Slug" placeholder="my-service" />
+            <span class="hint">用于 <code>/repo &lt;slug&gt;</code> 与 Ticket 引用，保存后尽量不变。</span>
+        </div>
+        <div class="field">
+            <label>显示名称<span class="required">*</span></label>
+            <input asp-for="Form.DisplayName" placeholder="订单服务" />
+        </div>
+        <div class="field full">
+            <label>服务器本地路径<span class="required">*</span></label>
+            <input asp-for="Form.LocalPath" placeholder="E:\Repos\my-service" />
+            <span class="hint">必须是运行本服务的机器上可读的 Git 仓库。执行器不会执行用户传入的任意路径。</span>
+        </div>
+        <div class="field">
+            <label>Remote URL</label>
+            <input asp-for="Form.RemoteUrl" placeholder="https://github.com/owner/repo.git" />
+        </div>
+        <div class="field">
+            <label>默认分支</label>
+            <input asp-for="Form.DefaultBranch" placeholder="main" />
+        </div>
+        <div class="field">
+            <label>PR Owner / Repository（可选）</label>
+            <div style="display:flex;gap:8px">
+                <input asp-for="Form.PullRequestOwner" placeholder="owner" />
+                <input asp-for="Form.PullRequestRepository" placeholder="repo" />
+            </div>
+            <span class="hint">留空时从 Remote URL 识别 GitHub owner/repo。</span>
+        </div>
+        <div class="field">
+            <label>PR Provider 配置</label>
+            <select asp-for="Form.PullRequestProfileId">
+                <option value="">— 使用默认 PR Provider —</option>
+                @foreach (var profile in Model.PullRequestProfiles)
+                {
+                    <option value="@profile.Id" selected="@(profile.Id == Model.Form.PullRequestProfileId)">@profile.Name（@profile.ProviderId）</option>
+                }
+            </select>
+        </div>
+        <div class="field">
+            <label>包含 Glob</label>
+            <textarea asp-for="Form.IncludeGlobsText" placeholder="src/**/*.cs&#10;web/**/*.tsx"></textarea>
+            <span class="hint">为空表示所有文本文件。一行一个。</span>
+        </div>
+        <div class="field">
+            <label>排除 Glob</label>
+            <textarea asp-for="Form.ExcludeGlobsText" placeholder="bin/&#10;obj/&#10;node_modules/"></textarea>
+        </div>
+        <div class="field full">
+            <label>团队补充说明（进入 Executor 提示词）</label>
+            <textarea asp-for="Form.Instructions" placeholder="例如：分页逻辑在 QueryObject 中；不要改前端快照。"></textarea>
+        </div>
+        <div class="field full">
+            <label>补丁验证命令</label>
+            <input asp-for="Form.ValidationCommand" placeholder="dotnet test --nologo" />
+            <span class="hint">在隔离 worktree 中执行；失败则补丁不会进入 PR。超时由运行设置控制。</span>
+        </div>
+        <div class="field">
+            <label>单次补丁最大文件数</label>
+            <input asp-for="Form.MaxPatchFiles" type="number" min="1" max="20" />
+        </div>
+        <div class="field">
+            <label>执行开关</label>
+            <label class="check"><input asp-for="Form.Enabled" type="checkbox" /><span><label>启用仓库</label><span class="hint">停用后执行器不能读取。</span></span></label>
+            <label class="check" style="margin-top:6px"><input asp-for="Form.AutoReviewEnabled" type="checkbox" /><span><label>定时审查</label><span class="hint">定时把静态审查发现送入 Eval；需要 Policy accept mode。</span></span></label>
+            <label class="check" style="margin-top:6px"><input asp-for="Form.AllowAutonomousFix" type="checkbox" /><span><label>允许自动修复</label><span class="hint">只影响推断候选；明确的人工 <code>/fix</code> 不受此开关阻止。</span></span></label>
+        </div>
+    </div>
+
+    <div class="form-actions">
+        <a class="btn" asp-page="Index">取消</a>
+        <button class="btn" type="submit" asp-page-handler="Check">检查目录</button>
+        <button class="btn primary" type="submit">保存</button>
+    </div>
+</form>

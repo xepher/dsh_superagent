@@ -1,0 +1,54 @@
+@page
+@model DshSuperagent.Web.Pages.Admin.PullRequests.IndexModel
+@{
+    ViewData["Title"] = "PR Provider";
+    ViewData["Subtitle"] = "PR 是 Executor 的结果出口，不是授权入口；dry-run 默认开启。";
+}
+
+<div class="card">
+    <div class="card-header">
+        <div><h2>Pull Request 配置</h2><p>GitHub Provider 通过 Git Data API 创建分支、提交和 PR，不需要本地推送凭据。</p></div>
+        <a class="btn primary small" asp-page="Edit">新增 PR 配置</a>
+    </div>
+    @if (Model.Profiles.Count == 0)
+    {
+        <div class="empty"><div class="mark">⑂</div><strong>还没有 PR Provider</strong><p>没有配置时，修复只保存已验证补丁，不创建分支或 PR。</p><a class="btn primary" asp-page="Edit">新增 PR 配置</a></div>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="table">
+                <thead><tr><th>名称</th><th>Provider</th><th>dry-run</th><th>标签</th><th>状态</th><th></th></tr></thead>
+                <tbody>
+                @foreach (var profile in Model.Profiles)
+                {
+                    <tr>
+                        <td><div class="cell-title">@profile.Name</div><div class="cell-sub">@profile.ProviderId</div></td>
+                        <td>@profile.ProviderName</td>
+                        <td><span class="badge @(profile.DryRun ? "warning" : "danger")">@(profile.DryRun ? "开启" : "关闭（会真正创建 PR）")</span></td>
+                        <td class="muted">@(string.IsNullOrWhiteSpace(profile.Labels) ? "—" : profile.Labels)</td>
+                        <td>
+                            <span class="badge @(profile.Enabled ? "success" : "neutral")">@(profile.Enabled ? "启用" : "停用")</span>
+                            @if (profile.IsDefault)
+                            {
+                                <span class="badge info">默认</span>
+                            }
+                        </td>
+                        <td>
+                            <div class="actions">
+                                <form method="post" asp-page-handler="Test" asp-route-id="@profile.Id" class="inline-form"><button class="btn small" type="submit">测试</button></form>
+                                <a class="btn small" asp-page="Edit" asp-route-id="@profile.Id">编辑</a>
+                                <form method="post" asp-page-handler="Delete" asp-route-id="@profile.Id" class="inline-form" data-confirm="删除 PR 配置？"><button class="btn small danger" type="submit">删除</button></form>
+                            </div>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<div class="callout warning">
+    <strong>dry-run 默认开启。</strong>关闭前先确认 Token 权限最小化（仅目标仓库 contents/pull request 写权限），并先用一条真实 Issue/审查结果验证补丁验证命令。
+</div>

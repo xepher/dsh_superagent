@@ -1,0 +1,35 @@
+@page
+@model LoginModel
+@{
+    Layout = "_AuthLayout";
+    ViewData["Title"] = "登录";
+}
+
+<div class="login-card">
+    <div class="login-brand">
+        <span class="brand-mark">S</span>
+        <span>
+            <strong>Superagent</strong>
+            <span>代码仓库智能体 · 管理面板</span>
+        </span>
+    </div>
+    <h1>登录管理面板</h1>
+    <p>配置 Source、Policy 与执行器，观察每一次 Trigger 到 Ticket 的流转。</p>
+    @if (!string.IsNullOrWhiteSpace(Model.Error))
+    {
+        <div class="alert error">@Model.Error</div>
+    }
+    @if (Model.ShowDefaultPasswordWarning)
+    {
+        <div class="alert warning">当前使用默认开发密码 <code>admin123</code>。生产环境请设置 <code>SUPERAGENT_ADMIN_PASSWORD</code>。</div>
+    }
+    <form method="post">
+        <input type="hidden" asp-for="ReturnUrl" />
+        <div class="field">
+            <label asp-for="Password">管理密码</label>
+            <input asp-for="Password" type="password" autocomplete="current-password" autofocus />
+        </div>
+        <button class="btn primary" type="submit">登录</button>
+    </form>
+    <div class="login-foot">.NET 10 · DDD reference implementation</div>
+</div>

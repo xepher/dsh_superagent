@@ -1,0 +1,118 @@
+@using System.Security.Claims
+@{
+    var path = Context.Request.Path.Value ?? "/";
+    string Active(string prefix) => path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ? "active" : string.Empty;
+}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] · Superagent</title>
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+</head>
+<body>
+<div class="shell">
+    <aside class="sidebar">
+        <a class="brand" asp-page="/Index">
+            <span class="brand-mark">S</span>
+            <span class="brand-text">
+                <strong>Superagent</strong>
+                <span>代码仓库智能体</span>
+            </span>
+        </a>
+        <nav class="nav">
+            <div class="nav-group-title">工作台</div>
+            <a class="nav-link @Active("/Index")" asp-page="/Index">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+                概览
+            </a>
+            <a class="nav-link @Active("/Admin/Threads")" asp-page="/Admin/Threads/Index">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16M4 12h16M4 19h10"/><circle cx="19" cy="19" r="2"/></svg>
+                Thread / Trigger
+            </a>
+            <a class="nav-link @Active("/Admin/Evals")" asp-page="/Admin/Evals/Index">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M8 12l3 3 5-6"/></svg>
+                Eval / Decision
+            </a>
+            <a class="nav-link @Active("/Admin/Tickets")" asp-page="/Admin/Tickets/Index">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16M4 12h16M4 18h10"/><circle cx="19" cy="18" r="2"/></svg>
+                工单 / 执行
+            </a>
+            <div class="nav-group-title">输入与写入</div>
+            <a class="nav-link @Active("/Admin/Sources")" asp-page="/Admin/Sources/Index">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l2-3a8.5 8.5 0 1 1 15-5.5z"/></svg>
+                Source
+            </a>
+            <a class="nav-link @Active("/Admin/Repositories")" asp-page="/Admin/Repositories/Index">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h6l2 3h8v13H4z"/><path d="M8 12h8M8 16h6"/></svg>
+                代码仓库
+            </a>
+            <div class="nav-group-title">授权与执行器</div>
+            <a class="nav-link @Active("/Admin/Policy")" asp-page="/Admin/Policy/Index">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg>
+                Policy
+            </a>
+            <a class="nav-link @Active("/Admin/Models")" asp-page="/Admin/Models/Index">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg>
+                模型服务
+            </a>
+            <a class="nav-link @Active("/Admin/PullRequests")" asp-page="/Admin/PullRequests/Index">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="7" r="2"/><path d="M6 7v10M18 9v2a5 5 0 0 1-5 5H8"/></svg>
+                PR Provider
+            </a>
+            <a class="nav-link @Active("/Admin/Settings")" asp-page="/Admin/Settings/Index">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 0 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 0 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.6-1H3a2 2 0 0 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 0 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 0 1 2.8 2.8l-.1.1A1.7 1.7 0 0 0 19.4 9c.2.6.8 1 1.6 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+                运行设置
+            </a>
+            <div class="nav-group-title">理解代码</div>
+            <a class="nav-link @Active("/Admin/Concepts")" asp-page="/Admin/Concepts/Index">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5a2 2 0 0 1 2-2h5v16H6a2 2 0 0 0-2 2z"/><path d="M20 5a2 2 0 0 0-2-2h-5v16h5a2 2 0 0 1 2 2z"/></svg>
+                领域模型说明
+            </a>
+        </nav>
+        <div class="sidebar-footer">
+            <span class="dot"></span> .NET 10 · Provider 架构
+        </div>
+    </aside>
+
+    <main class="main">
+        <header class="topbar">
+            <div>
+                <h1>@ViewData["Title"]</h1>
+                @if (ViewData["Subtitle"] is string subtitle)
+                {
+                    <p>@subtitle</p>
+                }
+            </div>
+            <div class="topbar-actions">
+                @if (User.Identity?.IsAuthenticated == true)
+                {
+                    <span class="user-chip"><span class="avatar">A</span>@User.Identity.Name</span>
+                    <form method="post" asp-page="/Logout" class="inline-form">
+                        <button type="submit" class="btn ghost small">退出</button>
+                    </form>
+                }
+            </div>
+        </header>
+        <div class="content">
+            @if (TempData["Success"] is string success)
+            {
+                <div class="alert success">@success</div>
+            }
+            @if (TempData["Error"] is string error)
+            {
+                <div class="alert error">@error</div>
+            }
+            @if (TempData["Info"] is string info)
+            {
+                <div class="alert info">@info</div>
+            }
+            @RenderBody()
+        </div>
+    </main>
+</div>
+<script src="~/js/site.js" asp-append-version="true"></script>
+@await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

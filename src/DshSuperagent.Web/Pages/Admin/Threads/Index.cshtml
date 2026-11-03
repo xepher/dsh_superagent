@@ -1,0 +1,87 @@
+@page
+@model DshSuperagent.Web.Pages.Admin.Threads.IndexModel
+@{
+    ViewData["Title"] = "Thread / Trigger";
+    ViewData["Subtitle"] = "Trigger 是不可变事件；Thread 把它们排序，并最多同时运行一个 Eval。";
+    string tab(string key) => Model.View == key ? "btn small primary" : "btn small";
+}
+
+<div class="card">
+    <div class="card-header">
+        <div>
+            <h2>Thread</h2>
+            <p>订阅决定后续 Discussion 是否到达 Executor；订阅不授予新权限。</p>
+        </div>
+        <div class="page-actions">
+            <a class="@tab("all")" asp-page="Index" asp-route-view="all">全部</a>
+            <a class="@tab("subscribed")" asp-page="Index" asp-route-view="subscribed">有订阅</a>
+            <a class="@tab("evaluating")" asp-page="Index" asp-route-view="evaluating">研判中 / 排队</a>
+            <a class="@tab("new")" asp-page="Index" asp-route-view="new">24h 新 Trigger</a>
+        </div>
+    </div>
+
+    @if (Model.Threads.Count == 0)
+    {
+        <div class="empty">
+            <div class="mark">≋</div>
+            <strong>没有匹配的 Thread</strong>
+            <p>Trigger 会在收到企业微信消息、或代码扫描发现时创建。</p>
+        </div>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="table">
+                <thead>
+                <tr><th>Thread</th><th>Source</th><th>Trigger</th><th>订阅</th><th>Eval</th><th>最近活动</th><th></th></tr>
+                </thead>
+                <tbody>
+                @foreach (var thread in Model.Threads)
+                {
+                    <tr>
+                        <td>
+                            <a class="cell-title" asp-page="Detail" asp-route-id="@thread.Id">@thread.Title</a>
+                            <div class="cell-sub mono">@thread.Id.ToString("N")[..12]</div>
+                        </td>
+                        <td class="muted">@thread.SourceName</td>
+                        <td>
+                            <span class="badge neutral">@thread.Triggers 总数</span>
+                            @if (thread.NewTriggers24h > 0)
+                            {
+                                <span class="badge info">24h +@thread.NewTriggers24h</span>
+                            }
+                        </td>
+                        <td>
+                            <span class="badge @(thread.LiveSubscriptions > 0 ? "teal" : "neutral")">@thread.LiveSubscriptions 工单</span>
+                            @if (thread.ContextOnlySubscriptions > 0)
+                            {
+                                <span class="badge neutral">@thread.ContextOnlySubscriptions 仅上下文</span>
+                            }
+                        </td>
+                        <td>
+                            @if (thread.ActiveEvalId is not null)
+                            {
+                                <span class="badge warning">@thread.ActiveEvalStatus</span>
+                            }
+                            @if (thread.PendingTriggers > 0)
+                            {
+                                <span class="badge neutral">下一批 @thread.PendingTriggers</span>
+                            }
+                            @if (thread.ActiveEvalId is null && thread.PendingTriggers == 0)
+                            {
+                                <span class="muted">—</span>
+                            }
+                        </td>
+                        <td class="muted nowrap">@thread.LastActivityAt.ToLocalTime().ToString("MM-dd HH:mm")</td>
+                        <td><a class="btn small" asp-page="Detail" asp-route-id="@thread.Id">打开</a></td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<div class="callout">
+    一个 Thread 上已有一个开放工单时，允许列表内的人继续发言会作为 <strong>Input</strong> 交给原 Executor，不再经过 Eval；未列入允许列表的跟进才是 <strong>inferred</strong> 候选。
+</div>

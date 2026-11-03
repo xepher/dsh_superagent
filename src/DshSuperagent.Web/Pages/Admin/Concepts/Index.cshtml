@@ -1,0 +1,111 @@
+@page
+@model DshSuperagent.Web.Pages.Admin.Concepts.IndexModel
+@{
+    ViewData["Title"] = "领域模型说明";
+    ViewData["Subtitle"] = "用代码理解 dsh-superagent 的 DDD 设计，以及 DeepSeek 想表达的“少占用注意力”。";
+}
+
+<section class="card">
+    <div class="card-header"><div><h2>一句话</h2></div></div>
+    <p style="font-size:15px;line-height:1.8;margin:0">
+        <strong>Source 产生不可变 Trigger → Thread 排序 → Eval 用 Gate + 研判产生 Decision → 只有 Eval 能创建 Ticket，
+        Ticket 带着 Mandate 被交给 Executor → Report 改变 Ticket 阶段 → Channel 把结果写回来源。</strong>
+        企业微信只是 Source/Channel 的一个 Provider；代码扫描是另一个 Source；LLM 与 GitHub 是 Executor 的适配器。
+    </p>
+</section>
+
+<section class="card">
+    <div class="card-header"><div><h2>主流程</h2><p>箭头是数据/控制流；虚线是“上下文”，不是授权。</p></div></div>
+    <div style="display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;align-items:stretch">
+        @foreach (var (title, body, color) in new[]
+                  {
+                      ("Source", "接收事件；Provider 解析传输", "#eff6ff"),
+                      ("Trigger", "不可变；外部 ID 去重", "#f0fdfa"),
+                      ("Thread", "排序；最多一个 Eval", "#f5f3ff"),
+                      ("Eval", "Gate + 研判 → Decision", "#fff7ed"),
+                      ("Ticket", "Mandate + Assignment + Report", "#fef2f2"),
+                      ("Channel", "先存储，再发送/重试", "#f8fafc"),
+                  })
+        {
+            <div style="background:@color;border:1px solid var(--border);border-radius:12px;padding:14px">
+                <strong style="display:block;margin-bottom:4px">@title</strong>
+                <span class="small muted">@body</span>
+            </div>
+        }
+    </div>
+    <div class="callout" style="margin-top:16px">
+        订阅（Subscription）从 Thread 指向 Ticket：后续消息作为 Input 到达 Ticket，<strong>不经过 Eval，也不授予新权限</strong>。
+        Correlation 只增加上下文，不参与路由。
+    </div>
+</section>
+
+<section class="card">
+    <div class="card-header"><div><h2>概念、代码与不变量</h2><p>每个概念都有明确的职责；业务需要变成属性，而不是新概念。</p></div></div>
+    <div class="table-wrap">
+        <table class="table">
+            <thead><tr><th>概念</th><th>代码</th><th>它守住的不变量</th></tr></thead>
+            <tbody>
+            <tr><td><strong>Source</strong></td><td class="mono">Domain/Sources/Source.cs</td><td>Provider 可替换；保存读取位置；Provider 配置不属于 Policy。</td></tr>
+            <tr><td><strong>Policy</strong></td><td class="mono">Domain/Sources/Policy.cs</td><td>版本化；允许列表、机器人、准入表、accept mode 同属一个版本；Gate 是确定性代码。</td></tr>
+            <tr><td><strong>Trigger</strong></td><td class="mono">Domain/Threads/Thread.cs</td><td>不可变；<code>(SourceId, ExternalId)</code> 唯一，重复回调只产生一个 Ticket。</td></tr>
+            <tr><td><strong>Thread</strong></td><td class="mono">Domain/Threads/Thread.cs</td><td>最多一个活动 Eval；同时到达的 Trigger 进入下一批；订阅由 Thread 持有。</td></tr>
+            <tr><td><strong>Eval / Decision</strong></td><td class="mono">Domain/Authorization/Eval.cs</td><td>唯一创建 Ticket 的入口；observe 下正的研判只记录 <code>would accept</code>；旧 Policy 版本会重新排队。</td></tr>
+            <tr><td><strong>Mandate</strong></td><td class="mono">Domain/Work/Ticket.cs</td><td>接受时记录 Policy 版本、强度、范围、请求者；只有人工停止撤回、重新校验失败撤销。</td></tr>
+            <tr><td><strong>Ticket</strong></td><td class="mono">Domain/Work/Ticket.cs</td><td>自己定义阶段；Report <code>ready</code> 无 PR 结束，有 PR 等待复核；人工停止后不再接收输入。</td></tr>
+            <tr><td><strong>Assignment / Report</strong></td><td class="mono">Domain/Work/Ticket.cs</td><td>Executor 在领域外；每次尝试都有记录；Report 是唯一的回写方式。</td></tr>
+            <tr><td><strong>Channel / Message</strong></td><td class="mono">Domain/Channels/Channel.cs</td><td>先持久化再发送；失败按退避重试；目标不存在才丢弃。</td></tr>
+            <tr><td><strong>Provider</strong></td><td class="mono">Core/Providers/*</td><td>企业微信/OpenAI/GitHub 只实现端口；领域层没有它们的类型。</td></tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="grid-2">
+    <div class="card">
+        <div class="card-header"><div><h2>两条路径</h2></div></div>
+        <p><strong>Eval 路径：</strong>新请求、推断候选、停止命令。Gate 先判断发送者和准入表，Eval 再研判规则，最后产生 Decision。</p>
+        <p><strong>订阅路径：</strong>已有一个开放 Ticket 的 Thread 上，允许列表内的人继续发言。消息作为 Input 直接交给 Executor，不产生新的 Eval；结束的 Ticket 在重新校验 Mandate 后恢复。</p>
+        <p class="muted small">代码入口：<code>InboundIngestionService</code> 的 <code>SelectOwner</code> 与 <code>StartEvalAsync</code>。</p>
+    </div>
+    <div class="card">
+        <div class="card-header"><div><h2>为什么这样分</h2></div></div>
+        <p><strong>Gate 是代码：</strong>谁能触发工作不能靠模型判断。模型只能研判“是否值得接单”。</p>
+        <p><strong>Mandate 是事实：</strong>工单被接受时为什么可以工作、能做多远，必须能在以后审计。</p>
+        <p><strong>Subscription 是上下文：</strong>让讨论继续到达 Executor，但不让后续消息悄悄扩大权限。</p>
+        <p><strong>Channel 是存储工作：</strong>先写库再发送，崩溃后可以重试，消息不会丢。</p>
+    </div>
+</section>
+
+<section class="card">
+    <div class="card-header"><div><h2>跟着一次企业微信提问读代码</h2></div></div>
+    <ol style="line-height:1.9;padding-left:22px">
+        <li><code>Providers.WeCom/WeComAibotSourceProvider.cs</code>：验签、解密、识别 @@、生成 <code>InboundEvent</code> 和流式回复地址。</li>
+        <li><code>Core/Application/InboundIngestionService.cs</code>：去重 Trigger、找/建 Thread、调用 <code>Policy.Gate</code>；命令直接回复，其余创建 Eval 或交给已有 Ticket。</li>
+        <li><code>Domain/Sources/Policy.cs</code>：Gate 判断 explicit / inferred / not admitted；准入表是 Policy 的一部分。</li>
+        <li><code>Core/Application/EvalProcessor.cs</code>：明确请求直接 Accept；推断候选调用 <code>IPolicyAssessor</code>，按 observe/auto 决定是否接单。</li>
+        <li><code>Domain/Work/Ticket.cs</code>：<code>Ticket.Accept</code> 创建 Mandate，<code>StartAssignment</code> 排入执行。</li>
+        <li><code>Core/Application/TicketExecutors.cs</code>：问答 Executor 读取仓库工具并生成带文件行号的回答；修复 Executor 生成并验证补丁。</li>
+        <li><code>Core/Application/TicketExecutionService.cs</code>：记录 Report，更新阶段，存储 Channel 消息。</li>
+        <li><code>Core/Application/ChannelDeliveryService.cs</code>：按退避发送，完成流式回复或 response_url。</li>
+    </ol>
+</section>
+
+<section class="card">
+    <div class="card-header"><div><h2>自主发现与修复</h2></div></div>
+    <p><code>RepositoryScanService</code> 是另一个 Source 实现：它扫描仓库，把每条静态审查发现变成 <code>repository-scan</code> Source 的不可变 Trigger。随后仍然走同一条 Gate → Eval → Ticket 链路。</p>
+    <p>默认 <code>observe</code>：你会看到 Decision 里出现“本可接单”，但不会产生工单。确认后把 Policy 切到 <code>auto</code>，并且仓库开启「允许自动修复」，修复 Executor 才会生成补丁、验证、按 PR Provider 配置创建 PR（默认 dry-run）。</p>
+    <div class="callout warning">这条链路刻意没有“后台直接改代码”的旁路。没有 Mandate 就没有权限；没有 Report 就没有完成。</div>
+</section>
+
+<section class="card">
+    <div class="card-header"><div><h2>DeepSeek 想表达什么</h2></div></div>
+    <p><strong>注意力是稀缺资源。</strong>所以默认不主动工作，推断工作先 observe；只在需要人行动或可使用结果时说话。</p>
+    <p><strong>用规则和 Mandate 约束自治，而不是用更多消息解释。</strong>规则写清楚“什么样的工作值得做”，Mandate 记录“为什么这次可以做”，Executor 只在范围内行动。</p>
+    <p><strong>把外部世界挡在领域外。</strong>企业微信、GitHub、LLM 都是 Provider/Adapter；领域只保留 Source、Thread、Eval、Ticket 等概念。这样换一个渠道或模型不需要重写授权逻辑。</p>
+    <p><strong>诚实交付。</strong>PR 不是 ready；补丁没验证就不是修复；失败就报告失败，不用“已处理”掩盖。</p>
+</section>
+
+<section class="card">
+    <div class="card-header"><div><h2>这不是什么</h2></div></div>
+    <p class="muted">这不是把“聊天机器人”换个名字。没有 <code>AgentJob</code> 这种绕过授权的后台任务；没有“管理员说可以就跳过 Eval”的旁路；没有把 Provider 的 userid 当成全局身份。Provider 解析事件，领域决定权限，Executor 做事并报告。</p>
+</section>
