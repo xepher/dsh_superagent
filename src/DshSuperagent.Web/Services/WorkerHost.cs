@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using DshSuperagent.Core.Application;
-using Microsoft.EntityFrameworkCore;
 using DshSuperagent.Core.Configuration;
 using DshSuperagent.Core.Storage;
 
@@ -210,20 +209,10 @@ public sealed class StaleWorkRecoveryWorker(
                 await using var scope = scopeFactory.CreateAsyncScope();
                 await WorkRecovery.RecoverAsync(scope.ServiceProvider, recoverAllRunning: false, stoppingToken);
                 var db = scope.ServiceProvider.GetRequiredService<DshSuperagent.Web.Data.AppDbContext>();
-                var stuck = await db.ChannelMessages
-                    .Where(message => message.Status == DshSuperagent.Domain.Channels.MessageStatus.Sending
-                                      && message.SendingAt != null
-                                      && message.SendingAt < DateTimeOffset.UtcNow.AddMinutes(-5))
-                    .ToListAsync(stoppingToken);
-                foreach (var message in stuck)
+                var recovered = await WorkRecovery.RecoverStuckMessagesAsync(db, stoppingToken);
+                if (recovered > 0)
                 {
-                    message.RecoverStuckSending();
-                }
-
-                if (stuck.Count > 0)
-                {
-                    await db.SaveChangesAsync(stoppingToken);
-                    logger.LogWarning("恢复了 {Count} 条卡在 Sending 的 Channel 消息", stuck.Count);
+                    logger.LogWarning("恢复了 {Count} 条卡在 Sending 的 Channel 消息", recovered);
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
