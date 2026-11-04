@@ -173,6 +173,8 @@ tests/
 - Source 配置、LLM API Key、PR Token（GitHub / Gitea）通过 ASP.NET Data Protection 加密存储；测试验证数据库中看不到明文 token。
 - `response_url` 只允许 HTTPS、默认端口、Source 配置的 `responseHost`（默认 `qyapi.weixin.qq.com`）和 `/cgi-bin/aibot/response` 路径，防止 SSRF。
 - 仓库工具只允许配置的本地目录；拒绝绝对路径、`..`、符号链接逃逸；跳过 `.git`、`bin`、`obj`、`node_modules`、`.env`。
+- Git 工作树的文件列表、搜索和静态扫描通过原生 `git check-ignore --no-index` 应用根目录及嵌套 `.gitignore`（含反向包含、转义、目录规则），也遵循 Git 的全局及 `.git/info/exclude` 规则。即使文件已被 Git 跟踪，只要匹配忽略规则也不作为候选；显式包含 Glob 不覆盖忽略规则，默认安全排除目录和显式排除 Glob 不会被 `!` 重新包含。普通非 Git 目录仍使用默认过滤和配置 Glob。若 Git 不可用、超时或拒绝读取工作树，则明确报错，不静默回退到未过滤扫描。
+- 静态扫描在应用文件数量上限前跳过超过 512 KB 的文件；列举后文件变大、删除或不可读时也跳过该文件，不中断其他文件扫描。扫描数量仅统计实际读取的文件。显式读取文件仍受 512 KB 限制。临时验证目录可在 `.gitignore` 或排除 Glob 中配置 `**/_verify/**`。
 - 补丁只在临时 Git worktree 中应用和验证，不修改工作区。
 - PR 默认 dry-run；不会自动合并。
 - 模型提示词明确把仓库文本视为不可信数据，不得改变授权。
@@ -196,12 +198,13 @@ dotnet test tests/DshSuperagent.Tests/DshSuperagent.Tests.csproj
 - Source 配置密文落库。
 - 自动扫描 → inferred Eval → Fix Ticket → 补丁验证 → PR；自动修复预算限制与超预算发现记录。
 - 重启后 Running Eval/Assignment 的恢复、三次后 Eval unavailable。
+- SQLite 下仅恢复超过五分钟的 Sending 消息，保留近期发送及其他状态；时间阈值在 .NET 中预计算后作为 SQL 参数。
 - Channel 消息三次失败后的终态、失败/丢弃消息的可见性。
 - `observe` 只记录 would accept，不建单。
 - WeCom response_url 白名单与 SSRF 拒绝。
 - GitHub Git Data API 的分支/commit/PR 流程与 dry-run。
 - Gitea 批量文件变更、标签 ID、WIP、分页 PR 复用、连接检查及输入拒绝（Mock HTTP，不调用真实 Gitea）。
-- 仓库路径/排除规则/路径穿越。
+- 仓库路径/排除规则/路径穿越、Git 忽略规则（嵌套、反向包含、已跟踪文件及跨批次过滤）、超大文件跳过。
 
 ## 9. 部署
 

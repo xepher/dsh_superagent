@@ -42,12 +42,25 @@ public sealed class StaticCodeReviewer
             throw new InvalidOperationException($"代码仓库目录不存在：{repository.LocalPath}");
         }
 
-        var files = await workspace.ListFilesAsync(null, Math.Clamp(maxFiles, 1, 2_000), cancellationToken);
+        var files = await workspace.ListFilesAsync(null, Math.Clamp(maxFiles, 1, 2_000), cancellationToken,
+            maxFileBytes: workspace.MaxFileBytes);
         var findings = new List<ReviewFinding>();
+        var filesScanned = 0;
         foreach (var file in files)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var slice = await workspace.ReadFileAsync(file.Path, 1, 250, cancellationToken);
+            if (file.Size > workspace.MaxFileBytes)
+            {
+                continue;
+            }
+
+            var slice = await TryReadFileAsync(workspace, file.Path, 1, cancellationToken);
+            if (slice is null)
+            {
+                continue;
+            }
+
+            filesScanned++;
             if (slice.TotalLines < 1)
             {
                 continue;
@@ -85,7 +98,7 @@ public sealed class StaticCodeReviewer
 
                     if (findings.Count >= 200)
                     {
-                        return new ReviewScanResult(findings, files.Count);
+                        return new ReviewScanResult(findings, filesScanned);
                     }
                 }
             }
@@ -96,7 +109,12 @@ public sealed class StaticCodeReviewer
                 var start = 251;
                 while (start <= slice.TotalLines)
                 {
-                    var window = await workspace.ReadFileAsync(file.Path, start, 250, cancellationToken);
+                    var window = await TryReadFileAsync(workspace, file.Path, start, cancellationToken);
+                    if (window is null)
+                    {
+                        break;
+                    }
+
                     var windowLines = window.Content.Split('\n');
                     for (var index = 0; index < windowLines.Length; index++)
                     {
@@ -124,7 +142,7 @@ public sealed class StaticCodeReviewer
                             });
                             if (findings.Count >= 200)
                             {
-                                return new ReviewScanResult(findings, files.Count);
+                                return new ReviewScanResult(findings, filesScanned);
                             }
                         }
                     }
@@ -139,7 +157,28 @@ public sealed class StaticCodeReviewer
             }
         }
 
-        return new ReviewScanResult(findings, files.Count);
+        return new ReviewScanResult(findings, filesScanned);
+    }
+
+    private static async Task<FileSlice?> TryReadFileAsync(
+        RepositoryWorkspace workspace, string path, int startLine, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await workspace.ReadFileAsync(path, startLine, 250, cancellationToken);
+        }
+        catch (FileTooLargeException)
+        {
+            return null;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     private static bool IsPlaceholder(string line)

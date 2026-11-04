@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -15,6 +16,8 @@ public sealed record FileSlice(
     bool Truncated);
 
 public sealed record FileEntry(string Path, long Size);
+
+public sealed class FileTooLargeException(string message) : InvalidOperationException(message);
 
 public sealed class RepositoryWorkspace
 {
@@ -52,16 +55,17 @@ public sealed class RepositoryWorkspace
 
     public bool Exists => Directory.Exists(Root);
 
-    public bool IsGitRepository => Directory.Exists(Path.Combine(Root, ".git"));
+    public bool IsGitRepository => Directory.Exists(Path.Combine(Root, ".git")) || File.Exists(Path.Combine(Root, ".git"));
 
     public async Task<IReadOnlyList<FileEntry>> ListFilesAsync(
         string? pattern,
         int maxResults,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int? maxFileBytes = null)
     {
         var matcher = string.IsNullOrWhiteSpace(pattern) ? null : GlobToRegex(pattern);
         var result = new List<FileEntry>();
-        foreach (var file in EnumerateFiles(cancellationToken))
+        await foreach (var file in EnumerateIncludedFilesAsync(cancellationToken))
         {
             var relative = Relative(file);
             if (matcher is not null && !matcher.IsMatch(relative))
@@ -69,7 +73,26 @@ public sealed class RepositoryWorkspace
                 continue;
             }
 
-            result.Add(new FileEntry(relative, new FileInfo(file).Length));
+            long size;
+            try
+            {
+                size = new FileInfo(file).Length;
+            }
+            catch (IOException)
+            {
+                continue;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                continue;
+            }
+
+            if (maxFileBytes is { } limit && size > limit)
+            {
+                continue;
+            }
+
+            result.Add(new FileEntry(relative, size));
             if (result.Count >= Math.Clamp(maxResults, 1, 500))
             {
                 break;
@@ -105,7 +128,7 @@ public sealed class RepositoryWorkspace
 
         var matches = new List<CodeMatch>();
         var limit = Math.Clamp(maxResults, 1, 100);
-        foreach (var file in EnumerateFiles(cancellationToken))
+        await foreach (var file in EnumerateIncludedFilesAsync(cancellationToken))
         {
             cancellationToken.ThrowIfCancellationRequested();
             var info = new FileInfo(file);
@@ -182,7 +205,7 @@ public sealed class RepositoryWorkspace
 
         if (info.Length > MaxFileBytes)
         {
-            throw new InvalidOperationException($"文件超过 {MaxFileBytes / 1024} KB 限制：{path}");
+            throw new FileTooLargeException($"文件超过 {MaxFileBytes / 1024} KB 限制：{path}");
         }
 
         if (!IsTextFile(fullPath))
@@ -256,6 +279,71 @@ public sealed class RepositoryWorkspace
         var normalizedRoot = Root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
         return fullPath.Equals(Root, StringComparison.OrdinalIgnoreCase)
             || fullPath.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async IAsyncEnumerable<string> EnumerateIncludedFilesAsync(
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        if (!IsGitRepository)
+        {
+            foreach (var file in EnumerateFiles(cancellationToken))
+            {
+                yield return file;
+            }
+
+            yield break;
+        }
+
+        var batch = new List<string>(100);
+        foreach (var file in EnumerateFiles(cancellationToken))
+        {
+            batch.Add(file);
+            if (batch.Count < 100)
+            {
+                continue;
+            }
+
+            foreach (var included in await FilterIgnoredAsync(batch, cancellationToken))
+            {
+                yield return included;
+            }
+
+            batch.Clear();
+        }
+
+        if (batch.Count > 0)
+        {
+            foreach (var included in await FilterIgnoredAsync(batch, cancellationToken))
+            {
+                yield return included;
+            }
+        }
+    }
+
+    private async Task<IReadOnlyList<string>> FilterIgnoredAsync(List<string> files, CancellationToken cancellationToken)
+    {
+        // Let Git implement nested .gitignore, negation, escaping and directory rules, including tracked files.
+        var input = string.Concat(files.Select(file => Relative(file) + "\0"));
+        var result = await ProcessRunner.RunAsync("git",
+            ["check-ignore", "--no-index", "--verbose", "-z", "--stdin"], Root,
+            TimeSpan.FromSeconds(20), cancellationToken, input, maxOutputCharacters: int.MaxValue,
+            outputEncoding: new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        if (result.ExitCode is not (0 or 1))
+        {
+            throw new InvalidOperationException($"读取 Git 忽略规则失败：{result.Output}");
+        }
+
+        var ignored = new HashSet<string>(StringComparer.Ordinal);
+        var fields = result.StandardOutput.Split('\0');
+        for (var index = 0; index + 3 < fields.Length; index += 4)
+        {
+            if (!fields[index + 2].StartsWith('!'))
+            {
+                ignored.Add(fields[index + 3]);
+            }
+        }
+
+        return files.Where(file => !ignored.Contains(Relative(file))).ToList();
     }
 
     private IEnumerable<string> EnumerateFiles(CancellationToken cancellationToken)
@@ -410,7 +498,10 @@ public sealed class RepositoryWorkspace
     }
 }
 
-public sealed record ProcessResult(int ExitCode, string Output);
+public sealed record ProcessResult(int ExitCode, string Output)
+{
+    public string StandardOutput { get; init; } = string.Empty;
+}
 
 public static class ProcessRunner
 {
@@ -420,7 +511,9 @@ public static class ProcessRunner
         string workingDirectory,
         TimeSpan timeout,
         CancellationToken cancellationToken = default,
-        string? standardInput = null)
+        string? standardInput = null,
+        int maxOutputCharacters = 20_000,
+        Encoding? outputEncoding = null)
     {
         using var process = new Process
         {
@@ -431,6 +524,9 @@ public static class ProcessRunner
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 RedirectStandardInput = standardInput is not null,
+                StandardInputEncoding = standardInput is null ? null : outputEncoding,
+                StandardOutputEncoding = outputEncoding,
+                StandardErrorEncoding = outputEncoding,
                 UseShellExecute = false,
                 CreateNoWindow = true,
             },
@@ -442,21 +538,26 @@ public static class ProcessRunner
         }
 
         process.Start();
-        if (standardInput is not null)
-        {
-            await process.StandardInput.WriteAsync(standardInput);
-            process.StandardInput.Close();
-        }
-
-        var stdout = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var stderr = process.StandardError.ReadToEndAsync(cancellationToken);
         using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutSource.CancelAfter(timeout);
+        // Drain both pipes before sending input, so batch check-ignore cannot block on a full output pipe.
+        var stdout = process.StandardOutput.ReadToEndAsync(timeoutSource.Token);
+        var stderr = process.StandardError.ReadToEndAsync(timeoutSource.Token);
+        string standardOutput;
+        string standardError;
         try
         {
+            if (standardInput is not null)
+            {
+                await process.StandardInput.WriteAsync(standardInput.AsMemory(), timeoutSource.Token);
+                process.StandardInput.Close();
+            }
+
             await process.WaitForExitAsync(timeoutSource.Token);
+            standardOutput = await stdout;
+            standardError = await stderr;
         }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException)
         {
             try
             {
@@ -466,15 +567,20 @@ public static class ProcessRunner
             {
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
             return new ProcessResult(-1, $"命令执行超过 {timeout.TotalSeconds:F0} 秒，已终止。");
         }
 
-        var output = (await stdout + "\n" + await stderr).Trim();
-        if (output.Length > 20_000)
+        var output = (standardOutput + "\n" + standardError).Trim();
+        if (output.Length > maxOutputCharacters)
         {
-            output = output[..20_000] + "\n…（输出已截断）";
+            output = output[..maxOutputCharacters] + "\n…（输出已截断）";
         }
 
-        return new ProcessResult(process.ExitCode, output);
+        return new ProcessResult(process.ExitCode, output)
+        {
+            StandardOutput = standardOutput.Length <= maxOutputCharacters
+                ? standardOutput : standardOutput[..maxOutputCharacters],
+        };
     }
 }

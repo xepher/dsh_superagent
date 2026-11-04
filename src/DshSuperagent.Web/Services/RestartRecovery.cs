@@ -91,6 +91,27 @@ public static class WorkRecovery
         }
     }
 
+    public static async Task<int> RecoverStuckMessagesAsync(AppDbContext db, CancellationToken cancellationToken)
+    {
+        var staleBefore = DateTimeOffset.UtcNow.AddMinutes(-5);
+        var stuck = await db.ChannelMessages
+            .Where(message => message.Status == Domain.Channels.MessageStatus.Sending
+                              && message.SendingAt != null
+                              && message.SendingAt < staleBefore)
+            .ToListAsync(cancellationToken);
+        foreach (var message in stuck)
+        {
+            message.RecoverStuckSending();
+        }
+
+        if (stuck.Count > 0)
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        return stuck.Count;
+    }
+
     private static async Task StartPendingAsync(
         Thread thread,
         IPolicyRepository policies,

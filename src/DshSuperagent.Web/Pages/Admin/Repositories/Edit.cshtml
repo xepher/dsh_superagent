@@ -68,7 +68,8 @@
         </div>
         <div class="field">
             <label>排除 Glob</label>
-            <textarea asp-for="Form.ExcludeGlobsText" placeholder="bin/&#10;obj/&#10;node_modules/"></textarea>
+            <textarea asp-for="Form.ExcludeGlobsText" placeholder="**/_verify/**&#10;**/generated/**"></textarea>
+            <span class="hint">一行一个。Git 工作树会自动应用 .gitignore；静态扫描跳过超过 512 KB 的文件。</span>
         </div>
         <div class="field full">
             <label>团队补充说明（进入 Executor 提示词）</label>
