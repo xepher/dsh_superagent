@@ -5,6 +5,7 @@ using DshSuperagent.Core.Providers.Sources;
 using DshSuperagent.Core.Storage;
 using DshSuperagent.Domain.Sources;
 using DshSuperagent.Providers.GitHub;
+using DshSuperagent.Providers.Gitea;
 using DshSuperagent.Providers.OpenAiCompatible;
 using DshSuperagent.Providers.WeCom;
 using DshSuperagent.Web.Data;
@@ -56,10 +57,13 @@ builder.Services.AddHttpClient("wecom", client => client.Timeout = TimeSpan.From
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 builder.Services.AddHttpClient("llm", client => client.Timeout = Timeout.InfiniteTimeSpan);
 builder.Services.AddHttpClient("github", client => client.Timeout = TimeSpan.FromSeconds(60));
+builder.Services.AddHttpClient("gitea", client => client.Timeout = TimeSpan.FromSeconds(60))
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 
 builder.Services.AddSingleton<ISourceProvider, WeComAibotSourceProvider>();
 builder.Services.AddSingleton<ILlmProvider, OpenAiCompatibleLlmProvider>();
 builder.Services.AddSingleton<IPullRequestProvider, GitHubPullRequestProvider>();
+builder.Services.AddSingleton<IPullRequestProvider, GiteaPullRequestProvider>();
 builder.Services.AddSingleton<SourceProviderRegistry>();
 builder.Services.AddSingleton<LlmProviderRegistry>();
 builder.Services.AddSingleton<PullRequestProviderRegistry>();

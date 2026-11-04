@@ -5,6 +5,7 @@
     <ProjectReference Include="..\DshSuperagent.Providers.WeCom\DshSuperagent.Providers.WeCom.csproj" />
     <ProjectReference Include="..\DshSuperagent.Providers.OpenAiCompatible\DshSuperagent.Providers.OpenAiCompatible.csproj" />
     <ProjectReference Include="..\DshSuperagent.Providers.GitHub\DshSuperagent.Providers.GitHub.csproj" />
+    <ProjectReference Include="..\DshSuperagent.Providers.Gitea\DshSuperagent.Providers.Gitea.csproj" />
     <ProjectReference Include="..\DshSuperagent.Domain\DshSuperagent.Domain.csproj" />
   </ItemGroup>
 

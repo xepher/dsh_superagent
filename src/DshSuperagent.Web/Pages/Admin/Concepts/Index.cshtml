@@ -10,7 +10,7 @@
     <p style="font-size:15px;line-height:1.8;margin:0">
         <strong>Source 产生不可变 Trigger → Thread 排序 → Eval 用 Gate + 研判产生 Decision → 只有 Eval 能创建 Ticket，
         Ticket 带着 Mandate 被交给 Executor → Report 改变 Ticket 阶段 → Channel 把结果写回来源。</strong>
-        企业微信只是 Source/Channel 的一个 Provider；代码扫描是另一个 Source；LLM 与 GitHub 是 Executor 的适配器。
+        企业微信只是 Source/Channel 的一个 Provider；代码扫描是另一个 Source；LLM、GitHub 与 Gitea 是 Executor 的适配器。
     </p>
 </section>
 
@@ -54,7 +54,7 @@
             <tr><td><strong>Ticket</strong></td><td class="mono">Domain/Work/Ticket.cs</td><td>自己定义阶段；Report <code>ready</code> 无 PR 结束，有 PR 等待复核；人工停止后不再接收输入。</td></tr>
             <tr><td><strong>Assignment / Report</strong></td><td class="mono">Domain/Work/Ticket.cs</td><td>Executor 在领域外；每次尝试都有记录；Report 是唯一的回写方式。</td></tr>
             <tr><td><strong>Channel / Message</strong></td><td class="mono">Domain/Channels/Channel.cs</td><td>先持久化再发送；失败按退避重试；目标不存在才丢弃。</td></tr>
-            <tr><td><strong>Provider</strong></td><td class="mono">Core/Providers/*</td><td>企业微信/OpenAI/GitHub 只实现端口；领域层没有它们的类型。</td></tr>
+            <tr><td><strong>Provider</strong></td><td class="mono">Core/Providers/*</td><td>企业微信/OpenAI/GitHub/Gitea 只实现端口；领域层没有它们的类型。</td></tr>
             </tbody>
         </table>
     </div>
@@ -101,7 +101,7 @@
     <div class="card-header"><div><h2>DeepSeek 想表达什么</h2></div></div>
     <p><strong>注意力是稀缺资源。</strong>所以默认不主动工作，推断工作先 observe；只在需要人行动或可使用结果时说话。</p>
     <p><strong>用规则和 Mandate 约束自治，而不是用更多消息解释。</strong>规则写清楚“什么样的工作值得做”，Mandate 记录“为什么这次可以做”，Executor 只在范围内行动。</p>
-    <p><strong>把外部世界挡在领域外。</strong>企业微信、GitHub、LLM 都是 Provider/Adapter；领域只保留 Source、Thread、Eval、Ticket 等概念。这样换一个渠道或模型不需要重写授权逻辑。</p>
+    <p><strong>把外部世界挡在领域外。</strong>企业微信、GitHub、Gitea、LLM 都是 Provider/Adapter；领域只保留 Source、Thread、Eval、Ticket 等概念。这样换一个渠道或模型不需要重写授权逻辑。</p>
     <p><strong>诚实交付。</strong>PR 不是 ready；补丁没验证就不是修复；失败就报告失败，不用“已处理”掩盖。</p>
 </section>
 

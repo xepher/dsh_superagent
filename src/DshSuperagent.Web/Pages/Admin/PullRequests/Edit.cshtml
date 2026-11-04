@@ -3,7 +3,7 @@
 @using DshSuperagent.Core.Providers.Sources
 @{
     ViewData["Title"] = Model.IsNew ? "新增 PR 配置" : "编辑 PR 配置";
-    ViewData["Subtitle"] = "Token 会加密存储；dry-run 开启时不会调用 GitHub 写接口。";
+    ViewData["Subtitle"] = "Token 会加密存储；dry-run 开启时不会调用 GitHub / Gitea 写接口。";
 }
 
 <form method="post" class="card">

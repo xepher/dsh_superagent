@@ -7,7 +7,7 @@
 - 让机器人基于配置好的代码仓库回答问题，例如“用户列表页的分页逻辑在哪里？”。
 - 定时扫描代码仓库，把静态审查发现变成推断候选；在 `auto` 模式下创建修复工单，生成、验证补丁并通过 PR Provider 提交 PR。
 - 提供完整的设置界面：Source、代码仓库、模型、PR、Policy、线程/研判/工单、运行设置与领域模型说明。
-- 企业微信只是 `wecom-aibot` Provider；LLM 与 GitHub 也是 Provider。领域层不依赖它们。
+- 企业微信只是 `wecom-aibot` Provider；LLM、GitHub 与 Gitea 也是 Provider。领域层不依赖它们。
 
 > 这是一个可运行的教学型实现，不是生产级成品。默认 PR dry-run、默认 Policy `observe`、默认只允许明确请求，都是刻意保守的选择。
 
@@ -34,7 +34,7 @@ dotnet run --project src/DshSuperagent.Web/DshSuperagent.Web.csproj --urls http:
 
 1. **代码仓库**：新增一个服务器上可读的 Git 目录，设置 slug、默认分支和验证命令。
 2. **模型服务**：配置 OpenAI 兼容模型（DeepSeek/Qwen/Ollama 等），设为默认。未配置时问答会降级为本地代码检索。
-3. **PR Provider**：配置 GitHub Token 与 API 地址。默认 dry-run；确认后再关闭。
+3. **PR Provider**：选择 GitHub 或 Gitea，配置 Token 与 API 地址。默认 dry-run；确认后再关闭。Gitea 配置步骤见下文。
 4. **Source**：新增企业微信智能机器人 Source，填写 Token、EncodingAESKey、机器人名称和回复方式；保存后复制回调 URL。
 5. **Source Policy**：填入允许的企微 `userid`；按需调整准入表。
 6. **Policy**：规则默认 `code-quality` 开启；先保持 `observe`，观察“本可接单”记录，再考虑切 `auto`。
@@ -102,7 +102,7 @@ dotnet run --project src/DshSuperagent.Web/DshSuperagent.Web.csproj --urls http:
    - 应用补丁
    - 执行仓库配置的验证命令
    - 读取变更文件
-7. PR Provider 通过 GitHub Git Data API 创建分支、commit、PR；默认 dry-run 时只保存补丁，可在工单详情下载 `.patch`。
+7. PR Provider 通过 GitHub Git Data API 或 Gitea 批量 Contents API 创建分支、commit、PR；默认 dry-run 时只保存补丁，可在工单详情下载 `.patch`。
 8. 结果写入 Report；有 PR 时工单进入“等待复核”，否则按 `ready` 协议结束。
 
 **没有任何“后台直接改代码”的旁路。** 没有 Mandate 就没有权限；没有 Report 就没有完成。
@@ -115,7 +115,8 @@ src/
   DshSuperagent.Core/            应用层：用例、端口、Agent、仓库工具、策略研判
   DshSuperagent.Providers.WeCom/        企业微信 Source/Channel Provider
   DshSuperagent.Providers.OpenAiCompatible/ LLM Provider
-  DshSuperagent.Providers.GitHub/       PR Provider
+  DshSuperagent.Providers.GitHub/       GitHub PR Provider
+  DshSuperagent.Providers.Gitea/        Gitea PR Provider
   DshSuperagent.Web/             宿主 + 基础设施 + Razor Pages 面板
 tests/
   DshSuperagent.Tests/           领域、Provider、HTTP 回调、完整链路测试
@@ -134,7 +135,7 @@ tests/
 | Ticket | 授权工作单元；自己定义阶段 | `Domain/Work/Ticket.cs` |
 | Assignment / Report | Executor 的尝试与回写 | `Domain/Work/Ticket.cs` |
 | Channel | 写回来源；先存储再发送 | `Domain/Channels/Channel.cs` |
-| Provider | 企业微信/LLM/GitHub 的端口实现 | `Core/Providers/*`、`Providers/*` |
+| Provider | 企业微信/LLM/GitHub/Gitea 的端口实现 | `Core/Providers/*`、`Providers/*` |
 
 更完整的讲解、聚合边界、不变量和代码阅读顺序见 [docs/DDD.md](docs/DDD.md)，面板中也有“领域模型说明”页。
 
@@ -146,18 +147,30 @@ tests/
 - **Source**：Provider 配置、回调 URL、允许用户/机器人、准入表。
 - **代码仓库**：本地路径、分支、包含/排除 Glob、验证命令、自动审查/自动修复开关。
 - **模型服务**：OpenAI 兼容 endpoint/key/model，测试连接。
-- **PR Provider**：GitHub Token、API 地址、draft、labels、dry-run。
+- **PR Provider**：GitHub / Gitea Token、API 地址、draft / WIP、labels、dry-run。
 - **Policy**：accept mode、proactive 规则、各 Source 的 Policy 部分。
 - **Thread / Trigger**：时间线、Disposition、Eval 队列、订阅。
 - **Eval / Decision**：接单/忽略/停止/不可用，以及 “would accept”。
 - **工单 / 执行**：Mandate、Inputs、Assignments、Reports、Channel 投递、补丁下载。
 - **运行设置**：Agent 轮次、扫描间隔、并发、验证超时、团队提示词、部署信息。
 
+### Gitea PR Provider
+
+1. 在 **PR Provider** 新增配置，选择 `gitea`。需要支持批量文件变更的 Gitea API（按 [Gitea 1.24 API](https://docs.gitea.com/api/1.24/operations/repo-change-files/) 实现）。
+2. 填写完整 API 根地址，例如 `https://git.example.com/api/v1`；部署在子路径时填写 `https://example.com/gitea/api/v1`。仅本机回环地址允许 HTTP；不自动跟随重定向。
+3. Token 需有目标仓库代码及 PR 的读写权限；连接检查调用 `GET /user`，还需用户信息读取权限。Token 使用已有 Secret 字段加密存储。
+4. 在 **代码仓库** 选择该 PR 配置，并显式填写 **PR Owner / Repository**（用户或组织名 / 仓库名）。Remote URL 自动推断目前仅支持 github.com。
+5. 保持 dry-run 检查补丁，再关闭以启用真实写入。默认 dry-run 不调用 API；无 Token 的连接检查只报告 dry-run，不能证明认证成功。
+
+文件新增/修改/删除通过一次 `POST /repos/{owner}/{repo}/contents` 提交到新分支；修改/删除先读取基线文件 SHA，不修改本地工作区。重试按目标仓库、head 和 base 复用已有 PR（包括已关闭/合并的 PR）；已有分支不覆盖其内容，只补建缺失 PR。因此分支名应由本应用独占，不应复用手工分支。
+
+`labels` 填已有仓库标签名，以逗号分隔；Provider 会分页查找并转成数字 ID，缺失标签时在写入前报错。`draft` 使用 [`WIP:` 标题前缀](https://docs.gitea.com/usage/pull-request)，不是 GitHub 的 draft 字段；服务器需保留默认 WIP 前缀配置。PR 创建失败后可重试，已有分支不会再次提交。
+
 ## 7. 安全设计
 
 - 管理面板使用 Cookie 认证；生产必须配置 `SUPERAGENT_ADMIN_PASSWORD`。
 - 登录失败限流（同一 IP 5 次/5 分钟）。
-- Source 配置、LLM API Key、GitHub Token 通过 ASP.NET Data Protection 加密存储；测试验证数据库中看不到明文 token。
+- Source 配置、LLM API Key、PR Token（GitHub / Gitea）通过 ASP.NET Data Protection 加密存储；测试验证数据库中看不到明文 token。
 - `response_url` 只允许 HTTPS、默认端口、Source 配置的 `responseHost`（默认 `qyapi.weixin.qq.com`）和 `/cgi-bin/aibot/response` 路径，防止 SSRF。
 - 仓库工具只允许配置的本地目录；拒绝绝对路径、`..`、符号链接逃逸；跳过 `.git`、`bin`、`obj`、`node_modules`、`.env`。
 - 补丁只在临时 Git worktree 中应用和验证，不修改工作区。
@@ -166,7 +179,7 @@ tests/
 
 ## 8. 测试
 
-当前测试集 34 个用例，全部通过：
+运行测试集（下列覆盖项不代表本次修改已执行测试）：
 
 ```bash
 dotnet test tests/DshSuperagent.Tests/DshSuperagent.Tests.csproj
@@ -187,6 +200,7 @@ dotnet test tests/DshSuperagent.Tests/DshSuperagent.Tests.csproj
 - `observe` 只记录 would accept，不建单。
 - WeCom response_url 白名单与 SSRF 拒绝。
 - GitHub Git Data API 的分支/commit/PR 流程与 dry-run。
+- Gitea 批量文件变更、标签 ID、WIP、分页 PR 复用、连接检查及输入拒绝（Mock HTTP，不调用真实 Gitea）。
 - 仓库路径/排除规则/路径穿越。
 
 ## 9. 部署
@@ -219,9 +233,9 @@ SUPERAGENT_ADMIN_PASSWORD='change-me' ASPNETCORE_URLS='http://0.0.0.0:8080' dotn
 - 目前只实现企业微信 Source 与代码扫描 Source；GitHub Issue/PR 事件 Source 未实现，PR 合并/关闭不会自动唤醒工单（可在工单详情人工跟进）。
 - 没有自动 merge。
 - SQLite + 单实例；没有多租户管理账号。
-- 真实企业微信、真实 GitHub、真实模型没有在测试中调用；测试使用官方协议实现与假 Provider 验证链路。
+- 真实企业微信、真实 GitHub / Gitea、真实模型没有在测试中调用；测试使用官方协议实现与假 Provider 验证链路。
 - 问答回答的完整性依赖模型能力；未配置模型时只做本地检索，不会编造业务逻辑。
-- GitHub PR 通过 Git Data API 创建，不修改本地工作区；本地分支不会自动推送。
+- GitHub PR 通过 Git Data API、Gitea PR 通过 Contents API 创建，不修改本地工作区；本地分支不会自动推送。
 - 当前用 EF `EnsureCreated` 建库，没有 Migrations；升级模型时需要迁移方案或重建数据库。
 
 ## 11. Attribution
