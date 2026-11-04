@@ -60,7 +60,7 @@
             <dt>强度</dt><dd><span class="badge @(Model.Ticket.Mandate.Strength == TriggerStrength.Explicit ? "success" : "warning")">@Model.Ticket.Mandate.Strength</span></dd>
             <dt>依据</dt><dd>@Model.Ticket.Mandate.Basis</dd>
             <dt>范围</dt><dd>@(Model.Ticket.WorkKind == WorkKind.Fix ? "修复并创建可审查 PR" : "回答代码问题")</dd>
-            <dt>Policy 版本</dt><dd>v@Model.Ticket.Mandate.PolicyVersion（当前 v@Model.Policy.Version）</dd>
+            <dt>Policy 版本</dt><dd>v@(Model.Ticket.Mandate.PolicyVersion)（当前 v@(Model.Policy.Version)）</dd>
             <dt>接收范围</dt><dd class="mono">@Model.Ticket.Mandate.ReceiptScope</dd>
             <dt>命中规则</dt>
             <dd>

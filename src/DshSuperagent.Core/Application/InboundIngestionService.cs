@@ -73,6 +73,20 @@ public sealed class InboundIngestionService(
         return await IngestAsync(source, callback, cancellationToken);
     }
 
+    public async Task<IngestResult> HandleEventAsync(
+        Guid sourceId,
+        InboundEvent inbound,
+        CancellationToken cancellationToken)
+    {
+        var source = await sources.GetAsync(sourceId, cancellationToken);
+        if (source is null || !source.Enabled || providers.Find(source.ProviderId) is not IBackgroundSourceProvider)
+        {
+            return new IngestResult(404, "text/plain; charset=utf-8", "Background Source not found or disabled.");
+        }
+
+        return await IngestAsync(source, new SourceCallbackResult { Event = inbound, Body = "{}" }, cancellationToken);
+    }
+
     private async Task<IngestResult> IngestAsync(
         Source source,
         SourceCallbackResult callback,
@@ -134,6 +148,26 @@ public sealed class InboundIngestionService(
         await threads.AddTriggerAsync(trigger, cancellationToken);
         thread.Touch(trigger.ReceivedAt);
         var touched = new List<AggregateRoot> { thread };
+
+        // Only policy-admitted discussion may add context; it cannot create or widen a mandate.
+        var contextSubscriptions = thread.Subscriptions.Where(item => item.IsLive && item.ContextOnly)
+            .Select(item => item.TicketId).ToHashSet();
+        if (contextSubscriptions.Count > 0 && gate.IsAdmitted)
+        {
+            var subscribed = await tickets.GetTicketsForThreadAsync(thread.Id, cancellationToken);
+            var open = subscribed.Where(item => contextSubscriptions.Contains(item.Id) && item.Status == TicketStatus.Open).ToList();
+            foreach (var ticket in open)
+            {
+                ticket.AddContextInput(InputKind.Trigger, inbound.Text, trigger.Id);
+                touched.Add(ticket);
+            }
+
+            await RecordDispositionAsync(thread, trigger, open.Count > 0 ? DispositionKind.Admitted : DispositionKind.Filtered,
+                open.Count > 0 ? "订阅讨论仅补充既有工单上下文，不创建或扩大授权。" : "订阅讨论没有开放工单，仅保留消息历史。",
+                null, null, cancellationToken);
+            await SaveAsync(touched, cancellationToken);
+            return new IngestResult(200, ackContentType, ackBody);
+        }
 
         if (!gate.IsAdmitted)
         {

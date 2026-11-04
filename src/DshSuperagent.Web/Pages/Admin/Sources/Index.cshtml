@@ -22,7 +22,7 @@
         <div class="empty">
             <div class="mark">↣</div>
             <strong>还没有 Source</strong>
-            <p>先配置企业微信智能机器人，或让代码扫描 Source 由定时任务创建。</p>
+            <p>可配置企业微信、飞书、GitHub 或 Gitea；代码扫描 Source 由定时任务创建。</p>
             <a class="btn primary" asp-page="/Admin/Sources/Edit">新增 Source</a>
         </div>
     }
@@ -36,7 +36,7 @@
                     <th>状态</th>
                     <th>允许用户 / 机器人</th>
                     <th>默认仓库</th>
-                    <th>回调</th>
+                    <th>接入方式</th>
                     <th>最近读取</th>
                     <th></th>
                 </tr>
@@ -73,6 +73,10 @@
                                     <button type="button" class="btn small" data-copy="@source.CallbackUrl">复制</button>
                                 </div>
                             }
+                            else if (source.IsBackground)
+                            {
+                                <span class="badge info">后台 CLI / API 接收</span>
+                            }
                             else
                             {
                                 <span class="muted small">由内部任务触发</span>
@@ -100,5 +104,5 @@
 </div>
 
 <div class="callout">
-    企业微信只是 <code>wecom-aibot</code> Provider。领域层只看到 <code>Source</code> 产生的 <code>InboundEvent</code>，以及写回用的 <code>ChannelAddress</code>；换一个 Provider 不需要改 Eval、Mandate 或 Ticket。
+    企业微信、飞书、GitHub 和 Gitea 都是可替换 Provider。领域层只看到 <code>Source</code> 产生的 <code>InboundEvent</code>，以及写回用的 <code>ChannelAddress</code>；换一个 Provider 不需要改 Eval、Mandate 或 Ticket。
 </div>

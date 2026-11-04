@@ -145,7 +145,7 @@
                         <td><span class="badge @(eval.Decision == "Accept" ? "success" : eval.Decision == "Stop" ? "danger" : "neutral")">@eval.Decision</span></td>
                         <td class="muted">@eval.Status</td>
                         <td>@(eval.Reason ?? "—")</td>
-                        <td class="mono">v@eval.PolicyVersion</td>
+                        <td class="mono">v@(eval.PolicyVersion)</td>
                     </tr>
                 }
                 @if (Model.RecentEvals.Count == 0)

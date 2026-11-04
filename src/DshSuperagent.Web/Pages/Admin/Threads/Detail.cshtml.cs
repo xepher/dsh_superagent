@@ -48,9 +48,14 @@ public sealed class DetailModel(
             .Take(30)
             .ToListAsync(cancellationToken);
         var triggerIds = Triggers.Select(trigger => trigger.Id).ToList();
-        Dispositions = await db.Dispositions.AsNoTracking()
+        var dispositions = await db.Dispositions.AsNoTracking()
             .Where(disposition => triggerIds.Contains(disposition.TriggerId))
-            .ToDictionaryAsync(disposition => disposition.TriggerId, cancellationToken);
+            .ToListAsync(cancellationToken);
+        Dispositions = dispositions.GroupBy(disposition => disposition.TriggerId)
+            .ToDictionary(group => group.Key, group => group
+                .OrderByDescending(disposition => disposition.CreatedAt)
+                .ThenByDescending(disposition => disposition.Id)
+                .First());
         var ticketIds = thread.Subscriptions.Select(subscription => subscription.TicketId).ToList();
         var tickets = await db.Tickets.AsNoTracking()
             .Where(ticket => ticketIds.Contains(ticket.Id))

@@ -10,7 +10,9 @@
     <p style="font-size:15px;line-height:1.8;margin:0">
         <strong>Source 产生不可变 Trigger → Thread 排序 → Eval 用 Gate + 研判产生 Decision → 只有 Eval 能创建 Ticket，
         Ticket 带着 Mandate 被交给 Executor → Report 改变 Ticket 阶段 → Channel 把结果写回来源。</strong>
-        企业微信只是 Source/Channel 的一个 Provider；代码扫描是另一个 Source；LLM、GitHub 与 Gitea 是 Executor 的适配器。
+        企业微信与飞书通过 Provider 接入消息来源与通知渠道，代码扫描是另一种触发来源。
+        LLM Provider 提供模型调用能力，GitHub 与 Gitea Provider 同时提供 Issue/PR 来源、讨论回复和 Pull Request 操作能力；
+        这些 Provider 都是外部能力的适配器，由策略评估、工单执行等应用流程按需调用。
     </p>
 </section>
 

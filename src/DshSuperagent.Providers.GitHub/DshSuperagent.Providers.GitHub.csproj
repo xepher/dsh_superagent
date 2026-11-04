@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\DshSuperagent.Core\DshSuperagent.Core.csproj" />
+    <ProjectReference Include="..\DshSuperagent.Providers.Common\DshSuperagent.Providers.Common.csproj" />
   </ItemGroup>
 
   <ItemGroup>

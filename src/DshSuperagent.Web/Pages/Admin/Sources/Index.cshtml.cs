@@ -37,11 +37,12 @@ public sealed class IndexModel(AppDbContext db, SourceProviderRegistry providers
                 provider?.DisplayName ?? "未注册 Provider",
                 source.Enabled,
                 provider?.Capabilities.Callback ?? false,
+                provider is IBackgroundSourceProvider,
                 part?.AllowedUsers.Count ?? 0,
                 part?.BotIds.Count ?? 0,
                 source.DefaultRepositoryId,
                 source.DefaultRepositoryId is { } repositoryId && repositoryNames.TryGetValue(repositoryId, out var name) ? name : null,
-                source.ReadPosition,
+                provider is IBackgroundSourceProvider ? BackgroundStatus(source.ReadPosition) : source.ReadPosition,
                 missing,
                 CallbackUrl(source));
         }).ToList();
@@ -89,6 +90,25 @@ public sealed class IndexModel(AppDbContext db, SourceProviderRegistry providers
         return RedirectToPage();
     }
 
+    private static string BackgroundStatus(string? position)
+    {
+        var state = DshSuperagent.Web.Services.SourceRuntime.ParseState(position);
+        var health = new List<(bool Error, string Text)>();
+        foreach (var pair in state.Where(pair => pair.Key.StartsWith("health:", StringComparison.Ordinal)))
+        {
+            try
+            {
+                using var json = System.Text.Json.JsonDocument.Parse(pair.Value);
+                var root = json.RootElement;
+                var status = root.GetProperty("status").GetString();
+                health.Add((status == "error", $"{pair.Key[7..]} · {status} · {root.GetProperty("detail").GetString()}"));
+            }
+            catch (System.Text.Json.JsonException) { }
+            catch (KeyNotFoundException) { }
+        }
+        return health.Count == 0 ? "等待后台接收器启动" : string.Join("；", health.OrderByDescending(item => item.Error).Take(3).Select(item => item.Text));
+    }
+
     private string CallbackUrl(Source source) =>
         $"{Request.Scheme}://{Request.Host}/api/sources/{source.Id}/callback";
 
@@ -99,6 +119,7 @@ public sealed class IndexModel(AppDbContext db, SourceProviderRegistry providers
         string ProviderDisplayName,
         bool Enabled,
         bool IsCallback,
+        bool IsBackground,
         int AllowedUsers,
         int BotIds,
         Guid? DefaultRepositoryId,
