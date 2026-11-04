@@ -7,7 +7,7 @@
 
 <div class="card">
     <div class="card-header">
-        <div><h2>Pull Request 配置</h2><p>GitHub Provider 通过 Git Data API 创建分支、提交和 PR，不需要本地推送凭据。</p></div>
+        <div><h2>Pull Request 配置</h2><p>GitHub / Gitea Provider 分别通过 Git Data API / Contents API 创建分支、提交和 PR，不需要本地推送凭据。</p></div>
         <a class="btn primary small" asp-page="Edit">新增 PR 配置</a>
     </div>
     @if (Model.Profiles.Count == 0)

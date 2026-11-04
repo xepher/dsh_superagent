@@ -17,7 +17,7 @@ DshSuperagent.Web（Host + Infrastructure + Panel）
 
 - **Domain** 没有 NuGet、没有 ASP.NET、没有 EF、没有企业微信。
 - **Core** 依赖 Domain，定义端口（`ISourceProvider`、`ILlmProvider`、`IPullRequestProvider`、仓储、队列、事件）。
-- **Providers** 只实现端口；WeCom/OpenAI/GitHub 的 DTO、加密、HTTP 都留在适配器里。
+- **Providers** 只实现端口；WeCom/OpenAI/GitHub/Gitea 的 DTO、加密、HTTP 都留在适配器里。
 - **Web** 是组合根与基础设施：EF Core、Data Protection、Cookie 认证、Razor Pages、后台 Worker。
 
 这条依赖规则是可检查的：Domain 项目没有对其他项目的 `ProjectReference`。
@@ -195,7 +195,7 @@ EF 持久化细节：
 - **注意力是稀缺资源**：默认 observe、默认不主动、只在需要人行动或可使用结果时发言。
 - **少概念、少设置**：业务需要变成某个概念的属性，或一段提示词，而不是新增一个聚合。
 - **用 Mandate 约束自治**：规则写清“什么值得做”，Mandate 记录“这次为什么可以做”，Executor 只在范围内行动。
-- **把外部世界挡在领域外**：企业微信、GitHub、LLM 都是适配器；换渠道/模型不改授权逻辑。
+- **把外部世界挡在领域外**：企业微信、GitHub、Gitea、LLM 都是适配器；换渠道/模型不改授权逻辑。
 - **诚实交付**：PR 不是 ready；补丁未验证不是修复；失败就报告失败。
 - **从窄开始**：短允许列表、observe 模式、proactive 工作先只记录。
 
