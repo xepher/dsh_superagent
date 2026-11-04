@@ -41,7 +41,7 @@
                         </td>
                         <td><a asp-page="/Admin/Threads/Detail" asp-route-id="@eval.ThreadId">@eval.ThreadTitle</a></td>
                         <td>@(eval.Reason ?? "—")</td>
-                        <td class="mono">v@eval.PolicyVersion</td>
+                        <td class="mono">v@(eval.PolicyVersion)</td>
                         <td class="muted nowrap">@eval.CreatedAt.ToLocalTime().ToString("MM-dd HH:mm")</td>
                     </tr>
                 }

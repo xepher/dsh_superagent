@@ -112,7 +112,7 @@
                                 <div class="cell-sub">命中规则：@string.Join(", ", eval.Decision.MatchedRuleIds)</div>
                             }
                         </td>
-                        <td class="mono">v@eval.PolicyVersion</td>
+                        <td class="mono">v@(eval.PolicyVersion)</td>
                         <td class="muted nowrap">@eval.CreatedAt.ToLocalTime().ToString("MM-dd HH:mm")</td>
                     </tr>
                 }
@@ -123,7 +123,7 @@
 </section>
 
 <section class="card">
-    <div class="card-header"><div><h2>Trigger 时间线</h2><p>最新在前。Trigger 不可变；Disposition 记录它为什么被过滤、研判或扇出。</p></div></div>
+    <div class="card-header"><div><h2>Trigger 时间线</h2><p>最新在前。Trigger 不可变；每个 Trigger 显示最新的 Disposition，历史处置记录保留。</p></div></div>
     @if (Model.Triggers.Count == 0)
     {
         <p class="muted">还没有 Trigger。</p>

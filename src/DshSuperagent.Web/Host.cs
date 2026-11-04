@@ -4,6 +4,8 @@ using DshSuperagent.Core.Providers.PullRequests;
 using DshSuperagent.Core.Providers.Sources;
 using DshSuperagent.Core.Storage;
 using DshSuperagent.Domain.Sources;
+using DshSuperagent.Providers.Common;
+using DshSuperagent.Providers.Feishu;
 using DshSuperagent.Providers.GitHub;
 using DshSuperagent.Providers.Gitea;
 using DshSuperagent.Providers.OpenAiCompatible;
@@ -60,7 +62,11 @@ builder.Services.AddHttpClient("github", client => client.Timeout = TimeSpan.Fro
 builder.Services.AddHttpClient("gitea", client => client.Timeout = TimeSpan.FromSeconds(60))
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 
+builder.Services.AddSingleton<IProviderCommandRunner, ProviderCommandRunner>();
 builder.Services.AddSingleton<ISourceProvider, WeComAibotSourceProvider>();
+builder.Services.AddSingleton<ISourceProvider, FeishuSourceProvider>();
+builder.Services.AddSingleton<ISourceProvider, GitHubSourceProvider>();
+builder.Services.AddSingleton<ISourceProvider, GiteaSourceProvider>();
 builder.Services.AddSingleton<ILlmProvider, OpenAiCompatibleLlmProvider>();
 builder.Services.AddSingleton<IPullRequestProvider, GitHubPullRequestProvider>();
 builder.Services.AddSingleton<IPullRequestProvider, GiteaPullRequestProvider>();
@@ -92,6 +98,7 @@ builder.Services.AddHostedService<WorkQueueProcessor>();
 builder.Services.AddHostedService<ChannelDeliveryWorker>();
 builder.Services.AddHostedService<RepositoryReviewScheduler>();
 builder.Services.AddHostedService<StaleWorkRecoveryWorker>();
+builder.Services.AddHostedService<SourceReceiverWorker>();
 
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>

@@ -2,7 +2,7 @@
 
 一个参考 [deepseek-ai/dsh-superagent-prototype](https://github.com/deepseek-ai/dsh-superagent-prototype) 的 .NET 10 实现：
 
-- 用 **企业微信智能机器人** 作为消息入口，只允许配置过的用户 `@` 机器人提问。
+- 支持 **企业微信、飞书、GitHub 与 Gitea** 消息/事件入口；新请求仍由 Source Policy 约束。
 - 用 **Source → Trigger → Thread → Eval → Decision → Mandate → Ticket → Assignment → Report → Channel** 这条领域链路处理每一次请求。
 - 让机器人基于配置好的代码仓库回答问题，例如“用户列表页的分页逻辑在哪里？”。
 - 定时扫描代码仓库，把静态审查发现变成推断候选；在 `auto` 模式下创建修复工单，生成、验证补丁并通过 PR Provider 提交 PR。
@@ -35,8 +35,8 @@ dotnet run --project src/DshSuperagent.Web/DshSuperagent.Web.csproj --urls http:
 1. **代码仓库**：新增一个服务器上可读的 Git 目录，设置 slug、默认分支和验证命令。
 2. **模型服务**：配置 OpenAI 兼容模型（DeepSeek/Qwen/Ollama 等），设为默认。未配置时问答会降级为本地代码检索。
 3. **PR Provider**：选择 GitHub 或 Gitea，配置 Token 与 API 地址。默认 dry-run；确认后再关闭。Gitea 配置步骤见下文。
-4. **Source**：新增企业微信智能机器人 Source，填写 Token、EncodingAESKey、机器人名称和回复方式；保存后复制回调 URL。
-5. **Source Policy**：填入允许的企微 `userid`；按需调整准入表。
+4. **Source**：企业微信配置加密 HTTP 回调；飞书使用机器人 `lark-cli` 事件流；GitHub 使用指定账号 `gh`，Gitea 使用 REST 轮询。后三者无需公网回调，详见 [后台来源接入](docs/background-sources.md)。
+5. **Source Policy**：填入允许的企微 `userid`、飞书 `open_id` 或代码托管账号 `login`；按需调整准入表。
 6. **Policy**：规则默认 `code-quality` 开启；先保持 `observe`，观察“本可接单”记录，再考虑切 `auto`。
 
 ## 2. 企业微信配置
@@ -115,8 +115,10 @@ src/
   DshSuperagent.Core/            应用层：用例、端口、Agent、仓库工具、策略研判
   DshSuperagent.Providers.WeCom/        企业微信 Source/Channel Provider
   DshSuperagent.Providers.OpenAiCompatible/ LLM Provider
-  DshSuperagent.Providers.GitHub/       GitHub PR Provider
-  DshSuperagent.Providers.Gitea/        Gitea PR Provider
+  DshSuperagent.Providers.Common/       CLI 安全执行与代码托管来源语义
+  DshSuperagent.Providers.Feishu/       飞书 CLI Source/Channel Provider
+  DshSuperagent.Providers.GitHub/       GitHub CLI Source/Channel + PR Provider
+  DshSuperagent.Providers.Gitea/        Gitea REST Source/Channel + PR Provider
   DshSuperagent.Web/             宿主 + 基础设施 + Razor Pages 面板
 tests/
   DshSuperagent.Tests/           领域、Provider、HTTP 回调、完整链路测试
@@ -144,12 +146,12 @@ tests/
 ## 6. 设置界面
 
 - **概览**：待人工处理、系统问题、24h 活动。
-- **Source**：Provider 配置、回调 URL、允许用户/机器人、准入表。
+- **Source**：Provider 配置、回调或后台接入方式、接收健康状态、允许用户/机器人、准入表。
 - **代码仓库**：本地路径、分支、包含/排除 Glob、验证命令、自动审查/自动修复开关。
 - **模型服务**：OpenAI 兼容 endpoint/key/model，测试连接。
 - **PR Provider**：GitHub / Gitea Token、API 地址、draft / WIP、labels、dry-run。
 - **Policy**：accept mode、proactive 规则、各 Source 的 Policy 部分。
-- **Thread / Trigger**：时间线、Disposition、Eval 队列、订阅。
+- **Thread / Trigger**：时间线、每个 Trigger 的最新 Disposition、Eval 队列、订阅。同一 Trigger 可有多条历史处置，详情按 CreatedAt 取最新，时间相同时按 Id 降序稳定选择；历史记录不删除。
 - **Eval / Decision**：接单/忽略/停止/不可用，以及 “would accept”。
 - **工单 / 执行**：Mandate、Inputs、Assignments、Reports、Channel 投递、补丁下载。
 - **运行设置**：Agent 轮次、扫描间隔、并发、验证超时、团队提示词、部署信息。
@@ -204,6 +206,7 @@ dotnet test tests/DshSuperagent.Tests/DshSuperagent.Tests.csproj
 - WeCom response_url 白名单与 SSRF 拒绝。
 - GitHub Git Data API 的分支/commit/PR 流程与 dry-run。
 - Gitea 批量文件变更、标签 ID、WIP、分页 PR 复用、连接检查及输入拒绝（Mock HTTP，不调用真实 Gitea）。
+- 后台来源的飞书消息标准化、CLI 身份核对、稳定投递 ID、GitHub/Gitea 讨论与 API 差异（Mock CLI/HTTP；新增源码不代表已执行）。
 - 仓库路径/排除规则/路径穿越、Git 忽略规则（嵌套、反向包含、已跟踪文件及跨批次过滤）、超大文件跳过。
 
 ## 9. 部署
@@ -233,10 +236,10 @@ SUPERAGENT_ADMIN_PASSWORD='change-me' ASPNETCORE_URLS='http://0.0.0.0:8080' dotn
 
 ## 10. 已知边界
 
-- 目前只实现企业微信 Source 与代码扫描 Source；GitHub Issue/PR 事件 Source 未实现，PR 合并/关闭不会自动唤醒工单（可在工单详情人工跟进）。
+- 已支持企业微信、飞书、GitHub/Gitea 与代码扫描 Source。匹配已启用代码托管 Source 的生成 PR 可跟进讨论和合并/关闭；无匹配 Source 时仍须人工跟进。接入方式、权限和与原版的差异见 [后台来源接入](docs/background-sources.md)。
 - 没有自动 merge。
 - SQLite + 单实例；没有多租户管理账号。
-- 真实企业微信、真实 GitHub / Gitea、真实模型没有在测试中调用；测试使用官方协议实现与假 Provider 验证链路。
+- 来源回归使用 Mock CLI/HTTP，不调用真实企业微信、飞书或 GitHub/Gitea 账号；未完成真实平台联调，编译或审查不代表联调通过。
 - 问答回答的完整性依赖模型能力；未配置模型时只做本地检索，不会编造业务逻辑。
 - GitHub PR 通过 Git Data API、Gitea PR 通过 Contents API 创建，不修改本地工作区；本地分支不会自动推送。
 - 当前用 EF `EnsureCreated` 建库，没有 Migrations；升级模型时需要迁移方案或重建数据库。

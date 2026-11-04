@@ -58,13 +58,19 @@ public sealed class ChannelDeliveryService(
             message.BeginSending();
             try
             {
+                var address = ChannelAddress.FromJson(channel.AddressJson);
+                address.Data["deliveryId"] = message.Id.ToString("N");
                 await provider.SendAsync(
                     source,
-                    ChannelAddress.FromJson(channel.AddressJson),
+                    address,
                     message.Content,
                     cancellationToken);
                 message.MarkSent();
                 delivered++;
+            }
+            catch (ChannelDestinationGoneException ex)
+            {
+                message.MarkDropped(ex.Message);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

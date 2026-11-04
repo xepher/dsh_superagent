@@ -49,7 +49,7 @@ public sealed class EditModel(AppDbContext db, SourceProviderRegistry providers)
                 ConfigValues[pair.Key] = pair.Value;
             }
 
-            CallbackUrl = $"{Request.Scheme}://{Request.Host}/api/sources/{Existing.Id}/callback";
+
         }
         else
         {
@@ -58,6 +58,8 @@ public sealed class EditModel(AppDbContext db, SourceProviderRegistry providers)
         }
 
         SelectedProvider = providers.Find(Form.ProviderId);
+        if (Existing is not null && SelectedProvider?.Capabilities.Callback == true)
+            CallbackUrl = $"{Request.Scheme}://{Request.Host}/api/sources/{Existing.Id}/callback";
         if (SelectedProvider is not null)
         {
             if (IsNew)
@@ -172,6 +174,12 @@ public sealed class EditModel(AppDbContext db, SourceProviderRegistry providers)
 
                     break;
             }
+        }
+
+        foreach (var field in SelectedProvider.ConfigFields.Where(field => field.Required))
+        {
+            if (!configuration.TryGetValue(field.Key, out var configured) || string.IsNullOrWhiteSpace(configured))
+                ModelState.AddModelError(string.Empty, $"「{field.Label}」不能为空。");
         }
 
         if (!ModelState.IsValid)

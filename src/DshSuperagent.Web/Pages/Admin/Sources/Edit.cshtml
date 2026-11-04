@@ -60,7 +60,7 @@
             <label>状态</label>
             <label class="check">
                 <input asp-for="Form.Enabled" type="checkbox" />
-                <span><label asp-for="Form.Enabled">启用这个 Source</label><span class="hint">停用后回调返回 404，已经排队的消息等待恢复。</span></span>
+                <span><label asp-for="Form.Enabled">启用这个 Source</label><span class="hint">停用后回调返回 404，后台接收器停止；已经排队的消息等待恢复。</span></span>
             </label>
         </div>
 
@@ -119,11 +119,20 @@
     @if (!string.IsNullOrWhiteSpace(Model.CallbackUrl))
     {
         <div class="callout" style="margin-top:18px">
-            <strong>回调 URL</strong>（企业微信后台填写）
+            <strong>回调 URL</strong>（对应平台后台填写）
             <div class="copy-row" style="margin-top:8px">
                 <input value="@Model.CallbackUrl" readonly />
                 <button type="button" class="btn small" data-copy="@Model.CallbackUrl">复制</button>
             </div>
+        </div>
+    }
+
+    @if (Model.SelectedProvider is DshSuperagent.Core.Providers.Sources.IBackgroundSourceProvider)
+    {
+        <div class="callout" style="margin-top:18px">
+            后台接入无需公网回调。启用后约 5 秒内启动；保存配置会先停止旧接收器再重启。
+            CLI 必须预先安装并以服务运行账号登录。更换仓库、服务端或机器人身份请新建 Source，避免混用历史。
+            接入说明见仓库 <code>docs/background-sources.md</code>。
         </div>
     }
 
