@@ -105,6 +105,9 @@ public sealed record SourceCallbackResult
     public string? AckBody { get; init; }
     public string? AckContentType { get; init; }
 
+    /// <summary>Rebind a persisted acknowledgement to this callback's transport parameters without changing its logical reply.</summary>
+    public Func<string, string>? RebindAck { get; init; }
+
     public static SourceCallbackResult Text(string text) => new()
     {
         ContentType = "text/plain; charset=utf-8",

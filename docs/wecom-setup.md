@@ -83,7 +83,35 @@ u2, 李四
 1. 在群里 `@机器人 帮助`，应收到使用说明。
 2. `@机器人 用户列表页的分页逻辑在哪里？`，应先收到处理中，再收到回答。
 3. 未列用户 `@机器人`，应收到“未在 Source 的允许列表中”。
-4. 同一 msgid 重复回调不会创建第二个工单（去重键是 Source + 外部 msgid）。
+4. 同一 msgid 重复回调不会创建第二个工单（去重键是 Source + 外部 msgid）。重复回调保留首次回复的内容与流式 ID，但使用本次回调 URL 中的 nonce 和当前秒级时间戳重新签名，不能原样重放已保存的加密响应外层。
+
+### 回复成功的判断与诊断日志
+
+`/help` 是内置命令，不依赖代码仓库、模型服务或 PR Provider；只有 Source 和允许用户配置也应能回复。
+
+流式回复与 `response_url` 是两条独立链路，切换模式只能辅助定位，不能作为另一条链路已经修复的证据：
+
+- **流式消息**：Channel 的 `Sent` 仅表示最终内容已写入流式存储，等待企微刷新回调获取，不表示客户端已经收到。需要分别确认初始消息显示、收到刷新回调、最终内容显示且流式结束。
+- **response_url**：只有 HTTP 成功且返回合法 JSON、`errcode=0`，程序才将本次投递视为成功；HTTP 200 的非零业务错误、缺失有效 `errcode` 或非 JSON 响应均作为失败处理。接口确认仍不等同于客户端展示凭据。
+
+### 加密回包必须是原样 UTF-8
+
+企微会自行解析加密回包的外层 JSON 与解密后的明文 JSON。回包必须用**原样 UTF-8** 序列化，不能把中文转成 `\uXXXX`，也不能把 Base64 密文里的 `+` 转成 `\u002B`。
+
+.NET 的 `JsonSerializer` 默认使用会转义的编码器；本实现因此在 WeCom Provider 里改用 `JavaScriptEncoder.UnsafeRelaxedJsonEscaping`（`WireJson`）。症状是：服务端 HTTP 200、回包能自验签解密，但企微仍在 1~3 秒后重复回调同一 `msgid`，且从不发流式刷新；客户端看不到任何消息。改用原样 UTF-8 后，企微立刻接受回包并开始刷新流式内容。
+
+`WeComFlowTests.Encrypted_Ack_Is_Raw_Utf8_Without_Json_Escapes` 固定住这个约定。
+
+排查流式模式完全无回复时，按顺序查看日志：
+
+1. `SourceCallback` 的“回调开始”：确认请求到达，使用 Source ID 与 Request ID 对应同一次请求。
+2. `WeComAibotSourceProvider` 的“初始流式响应已构造”：记录 Stream ID 与加密响应字节数，不记录消息正文。
+3. `SourceCallback` 的“回调响应已准备”“回调 HTTP 写出完成”：查看状态码、响应大小及耗时；写出完成不代表企微接受或展示。
+4. `WeComAibotSourceProvider` 的“企微流式刷新”：`Found` 表示流式状态存在，`Finished` 表示生成是否结束；使用 Stream ID 对应初始响应。
+5. 若出现“企微重复回调”，本次只是对首次保存的回复重新签名，不会创建新 Trigger 或新流式状态；此前“初始流式响应已构造”中的新 Stream ID 不会用于重复回调的实际响应。
+6. 若初始响应已写出但没有刷新记录，应继续核对回调时限、加密响应协议以及公网代理链路，不能仅凭 Channel 的 `Sent` 判断流式成功。
+
+诊断日志不记录 Token、EncodingAESKey、签名、回调查询字符串、完整 response_url 或消息正文。部署新代码并重启后日志才会生效；没有历史刷新日志不代表历史上一定没有刷新请求。
 
 如果流式回复一直不结束：
 

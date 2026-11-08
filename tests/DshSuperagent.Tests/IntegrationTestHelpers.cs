@@ -155,6 +155,23 @@ public static class IntegrationTestHelpers
         return await SendEncryptedAsync(client, sourceId, inner);
     }
 
+    public static async Task<string> SendRawMessageAsync(
+        TestClient client,
+        Guid sourceId,
+        string userId,
+        string text)
+    {
+        var inner = new JsonObject
+        {
+            ["msgid"] = Guid.NewGuid().ToString("N"),
+            ["chattype"] = "single",
+            ["from"] = new JsonObject { ["userid"] = userId },
+            ["msgtype"] = "text",
+            ["text"] = new JsonObject { ["content"] = text },
+        };
+        return await PostEncryptedAsync(client, sourceId, inner);
+    }
+
     public static async Task<CallbackAck> SendGroupMessageAsync(
         TestClient client,
         Guid sourceId,
@@ -248,25 +265,16 @@ public static class IntegrationTestHelpers
 
     private static async Task<CallbackAck> SendEncryptedAsync(TestClient client, Guid sourceId, JsonObject inner)
     {
-        await using var scope = client.Services.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var source = await db.Sources.AsNoTracking().FirstAsync(item => item.Id == sourceId);
-        var token = source.GetConfig("token")!;
-        var key = source.GetConfig("encodingAesKey")!;
-        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
-        var nonce = Guid.NewGuid().ToString("N");
-        var encrypted = WeComCrypto.Encrypt(key, inner.ToJsonString());
-        var signature = WeComCrypto.ComputeSignature(token, timestamp, nonce, encrypted);
-        var response = await client.Http.PostAsync(
-            $"/api/sources/{sourceId}/callback?msg_signature={signature}&timestamp={timestamp}&nonce={nonce}",
-            new StringContent(JsonSerializer.Serialize(new { encrypt = encrypted }), Encoding.UTF8, "application/json"));
-        response.EnsureSuccessStatusCode();
-        var outer = await response.Content.ReadAsStringAsync();
+        var outer = await PostEncryptedAsync(client, sourceId, inner);
         if (string.IsNullOrWhiteSpace(outer))
         {
             return new CallbackAck(null);
         }
 
+        await using var scope = client.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var source = await db.Sources.AsNoTracking().FirstAsync(item => item.Id == sourceId);
+        var key = source.GetConfig("encodingAesKey")!;
         using var document = JsonDocument.Parse(outer);
         if (!document.RootElement.TryGetProperty("encrypt", out var encryptedProperty))
         {
@@ -284,6 +292,24 @@ public static class IntegrationTestHelpers
         }
 
         return new CallbackAck(null);
+    }
+
+    private static async Task<string> PostEncryptedAsync(TestClient client, Guid sourceId, JsonObject inner)
+    {
+        await using var scope = client.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var source = await db.Sources.AsNoTracking().FirstAsync(item => item.Id == sourceId);
+        var token = source.GetConfig("token")!;
+        var key = source.GetConfig("encodingAesKey")!;
+        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
+        var nonce = Guid.NewGuid().ToString("N");
+        var encrypted = WeComCrypto.Encrypt(key, inner.ToJsonString());
+        var signature = WeComCrypto.ComputeSignature(token, timestamp, nonce, encrypted);
+        var response = await client.Http.PostAsync(
+            $"/api/sources/{sourceId}/callback?msg_signature={signature}&timestamp={timestamp}&nonce={nonce}",
+            new StringContent(JsonSerializer.Serialize(new { encrypt = encrypted }), Encoding.UTF8, "application/json"));
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadAsStringAsync();
     }
 
     private static async Task RunGitAsync(string workingDirectory, string[] arguments)

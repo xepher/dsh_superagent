@@ -1,11 +1,13 @@
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using DshSuperagent.Core.Providers.Sources;
 using DshSuperagent.Domain.Sources;
+using Microsoft.Extensions.Logging;
 
 namespace DshSuperagent.Providers.WeCom;
 
@@ -18,13 +20,25 @@ public sealed class WeComAibotSourceProvider : ISourceProvider
     public const string ProviderId = "wecom-aibot";
     private const int MaxContentBytes = 20_480;
 
+    // WeCom parses the encrypted envelope and its plaintext itself; keep raw UTF-8 and unescaped
+    // base64 ('+' must stay '+') exactly like the reference SDKs do.
+    private static readonly JsonSerializerOptions WireJson = new()
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
+
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IStreamReplyStore _streamReplies;
+    private readonly ILogger<WeComAibotSourceProvider>? _logger;
 
-    public WeComAibotSourceProvider(IHttpClientFactory httpClientFactory, IStreamReplyStore streamReplies)
+    public WeComAibotSourceProvider(
+        IHttpClientFactory httpClientFactory,
+        IStreamReplyStore streamReplies,
+        ILogger<WeComAibotSourceProvider>? logger = null)
     {
         _httpClientFactory = httpClientFactory;
         _streamReplies = streamReplies;
+        _logger = logger;
     }
 
     public string Id => ProviderId;
@@ -83,6 +97,7 @@ public sealed class WeComAibotSourceProvider : ISourceProvider
         }
         catch (Exception ex) when (ex is CryptographicException or FormatException or JsonException or ArgumentException)
         {
+            _logger?.LogWarning("企微回调解析失败，异常类型 {ErrorType}", ex.GetType().Name);
             return SourceCallbackResult.BadRequest($"回调解析失败：{ex.Message}");
         }
     }
@@ -102,6 +117,9 @@ public sealed class WeComAibotSourceProvider : ISourceProvider
         if (address.Get("stream_id") is { Length: > 0 } streamId)
         {
             await _streamReplies.CompleteAsync(streamId, content, cancellationToken);
+            _logger?.LogInformation(
+                "企微流式内容已就绪：Source {SourceId} Stream {StreamId}，等待企微刷新回调获取；此状态不代表客户端已收到",
+                source.Id, streamId);
             return;
         }
 
@@ -184,6 +202,14 @@ public sealed class WeComAibotSourceProvider : ISourceProvider
         using var inner = JsonDocument.Parse(plain);
         var root = inner.RootElement;
         var messageType = GetString(root, "msgtype") ?? string.Empty;
+        _logger?.LogInformation(
+            "企微回调内容：MsgType {MsgType} ChatType {ChatType} ReplyMode {ReplyMode} AibotIdPresent {AibotIdPresent} AibotIdMatched {AibotIdMatched} ResponseUrlPresent {ResponseUrlPresent}",
+            messageType,
+            GetString(root, "chattype"),
+            settings.ReplyMode,
+            GetString(root, "aibotid") is { Length: > 0 },
+            settings.AibotId is null || string.Equals(GetString(root, "aibotid"), settings.AibotId, StringComparison.Ordinal),
+            GetString(root, "response_url") is { Length: > 0 });
         if (settings.AibotId is not null
             && GetString(root, "aibotid") is { } aibotId
             && !string.Equals(aibotId, settings.AibotId, StringComparison.Ordinal))
@@ -267,6 +293,9 @@ public sealed class WeComAibotSourceProvider : ISourceProvider
             address.Data["stream_id"] = streamId;
             var ackPacket = BuildStreamPacket(streamId, false, "已收到，正在分析代码仓库…");
             ackBody = EncryptPacket(settings, ackPacket, nonce);
+            _logger?.LogInformation(
+                "企微初始流式响应已构造：Stream {StreamId}，加密响应 {ResponseBytes} 字节",
+                streamId, Encoding.UTF8.GetByteCount(ackBody));
         }
 
         var threadKey = isDirect ? $"wecom:direct:{userId}" : $"wecom:chat:{chatId ?? userId}";
@@ -285,6 +314,34 @@ public sealed class WeComAibotSourceProvider : ISourceProvider
             Body = ackBody,
             AckBody = ackBody,
             AckContentType = ackBody.Length == 0 ? null : "application/json; charset=utf-8",
+            RebindAck = persistedAck =>
+            {
+                if (persistedAck.Length == 0)
+                {
+                    return persistedAck;
+                }
+
+                try
+                {
+                    using var cached = JsonDocument.Parse(persistedAck);
+                    if (cached.RootElement.ValueKind != JsonValueKind.Object
+                        || !cached.RootElement.TryGetProperty("encrypt", out var cipher)
+                        || cipher.GetString() is not { Length: > 0 } encrypted)
+                    {
+                        _logger?.LogWarning("企微重复回调：保存的回复不含 encrypt，按原样返回");
+                        return persistedAck;
+                    }
+
+                    var rebound = WrapEncryptedPacket(settings, encrypted, nonce);
+                    _logger?.LogInformation("企微重复回调：保留原回复内容和流式 ID，已按当前回调 nonce 重新签名");
+                    return rebound;
+                }
+                catch (JsonException)
+                {
+                    _logger?.LogWarning("企微重复回调：保存的回复不是合法 JSON，按原样返回");
+                    return persistedAck;
+                }
+            },
             Event = new InboundEvent(
                 msgId,
                 threadKey,
@@ -316,6 +373,9 @@ public sealed class WeComAibotSourceProvider : ISourceProvider
         }
 
         var state = await _streamReplies.GetAsync(streamId, cancellationToken);
+        _logger?.LogInformation(
+            "企微流式刷新：Stream {StreamId} Found {Found} Finished {Finished}",
+            streamId, state is not null, state?.Finished);
         var packet = state is null
             ? BuildStreamPacket(streamId, true, "会话已结束或过期，请重新 @我 提问。")
             : BuildStreamPacket(streamId, state.Finished, state.Content);
@@ -358,10 +418,32 @@ public sealed class WeComAibotSourceProvider : ISourceProvider
         using var response = await client.SendAsync(httpRequest, HttpCompletionOption.ResponseContentRead, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
-            var error = await response.Content.ReadAsStringAsync(cancellationToken);
-            throw new InvalidOperationException(
-                $"企业微信回复失败：HTTP {(int)response.StatusCode} {Trim(error, 300)}");
+            throw new InvalidOperationException($"企业微信回复失败：HTTP {(int)response.StatusCode}。");
         }
+
+        try
+        {
+            await using var body = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var result = await JsonDocument.ParseAsync(body, cancellationToken: cancellationToken);
+            if (result.RootElement.ValueKind != JsonValueKind.Object
+                || !result.RootElement.TryGetProperty("errcode", out var code)
+                || code.ValueKind != JsonValueKind.Number
+                || !code.TryGetInt32(out var errorCode))
+            {
+                throw new InvalidOperationException("企业微信回复失败：响应缺少有效的 errcode，不能确认发送成功。");
+            }
+
+            if (errorCode != 0)
+            {
+                throw new InvalidOperationException($"企业微信回复失败：errcode={errorCode}。");
+            }
+        }
+        catch (JsonException)
+        {
+            throw new InvalidOperationException("企业微信回复失败：响应不是合法 JSON，不能确认发送成功。");
+        }
+
+        _logger?.LogInformation("企微 response_url 回复已获接口确认：errcode=0");
     }
 
     private static bool TryReadSettings(Source source, out WeComSettings settings, out string error)
@@ -493,8 +575,13 @@ public sealed class WeComAibotSourceProvider : ISourceProvider
 
     private static string EncryptPacket(WeComSettings settings, JsonObject packet, string nonce)
     {
-        var plaintext = packet.ToJsonString();
+        var plaintext = packet.ToJsonString(WireJson);
         var encrypted = WeComCrypto.Encrypt(settings.EncodingAesKey, plaintext, settings.ReceiveId);
+        return WrapEncryptedPacket(settings, encrypted, nonce);
+    }
+
+    private static string WrapEncryptedPacket(WeComSettings settings, string encrypted, string nonce)
+    {
         var timestamp = WeComCrypto.NewTimestamp();
         var signature = WeComCrypto.ComputeSignature(settings.Token, timestamp, nonce, encrypted);
         return JsonSerializer.Serialize(new
@@ -503,7 +590,7 @@ public sealed class WeComAibotSourceProvider : ISourceProvider
             msgsignature = signature,
             timestamp = long.Parse(timestamp),
             nonce,
-        });
+        }, WireJson);
     }
 
     private static JsonObject BuildStreamPacket(string streamId, bool finish, string content) =>
@@ -553,9 +640,6 @@ public sealed class WeComAibotSourceProvider : ISourceProvider
 
         return builder + suffix;
     }
-
-    private static string Trim(string value, int max) =>
-        value.Length <= max ? value : value[..max] + "…";
 
     private sealed record WeComSettings(
         string Token,

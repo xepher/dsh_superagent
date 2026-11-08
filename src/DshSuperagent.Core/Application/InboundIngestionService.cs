@@ -107,10 +107,11 @@ public sealed class InboundIngestionService(
         var existing = await threads.FindTriggerAsync(source.Id, inbound.ExternalId, cancellationToken);
         if (existing is not null)
         {
+            var persistedAck = existing.CallbackAckBody ?? ackBody;
             return new IngestResult(
                 200,
                 existing.CallbackAckContentType ?? ackContentType,
-                existing.CallbackAckBody ?? ackBody);
+                callback.RebindAck?.Invoke(persistedAck) ?? persistedAck);
         }
 
         var channelPurpose = string.Equals(inbound.Channel.Kind, "none", StringComparison.OrdinalIgnoreCase)

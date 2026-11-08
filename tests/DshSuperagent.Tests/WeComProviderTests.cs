@@ -85,7 +85,7 @@ public sealed class WeComProviderTests
             Requests.Add(new RecordedRequest(request.RequestUri!, body));
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = new StringContent("{}", Encoding.UTF8, "application/json"),
+                Content = new StringContent("{\"errcode\":0}", Encoding.UTF8, "application/json"),
             };
         }
     }

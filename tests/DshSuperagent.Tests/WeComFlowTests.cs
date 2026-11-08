@@ -1,5 +1,7 @@
 using DshSuperagent.Core.Application;
 using DshSuperagent.Core.Storage;
+using DshSuperagent.Providers.WeCom;
+using System.Text.Json;
 using DshSuperagent.Domain.Authorization;
 using DshSuperagent.Domain.Sources;
 using DshSuperagent.Domain.Work;
@@ -228,5 +230,39 @@ public sealed class WeComFlowTests
         Assert.Equal(0, await db.Tickets.CountAsync());
         Assert.Equal(0, await db.Evals.CountAsync());
         Assert.Equal(1, await db.Triggers.CountAsync());
+    }
+
+    [Fact]
+    public async Task Encrypted_Ack_Is_Raw_Utf8_Without_Json_Escapes()
+    {
+        using var factory = new SuperagentTestFactory();
+        var http = factory.CreateClient();
+        var client = new IntegrationTestHelpers.TestClient(http, factory.Services);
+        var sourceId = await IntegrationTestHelpers.CreateSourceAndPolicyAsync(
+            factory.Services,
+            await IntegrationTestHelpers.CreateRepositoryAsync(factory.Services, "escape-repo", "Docs/Page.cs", "// 分页逻辑\n"),
+            AcceptMode.Auto,
+            "u1");
+
+        var outer = await IntegrationTestHelpers.SendRawMessageAsync(client, sourceId, "u1", "/help");
+
+        Assert.DoesNotContain("\\u", outer);
+        using var envelope = JsonDocument.Parse(outer);
+        var cipher = envelope.RootElement.GetProperty("encrypt").GetString()!;
+        var nonce = envelope.RootElement.GetProperty("nonce").GetString()!;
+        var timestamp = envelope.RootElement.GetProperty("timestamp").ToString();
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var source = await db.Sources.AsNoTracking().FirstAsync(item => item.Id == sourceId);
+        var token = source.GetConfig("token")!;
+        var plain = WeComCrypto.Decrypt(source.GetConfig("encodingAesKey")!, cipher);
+
+        Assert.Equal(
+            WeComCrypto.ComputeSignature(token, timestamp, nonce, cipher),
+            envelope.RootElement.GetProperty("msgsignature").GetString());
+        Assert.DoesNotContain("\\u", plain);
+        using var ack = JsonDocument.Parse(plain);
+        Assert.Equal("stream", ack.RootElement.GetProperty("msgtype").GetString());
     }
 }
