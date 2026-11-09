@@ -138,7 +138,7 @@ public sealed class ChannelDeliveryWorker(
                     .DeliverDueAsync(stoppingToken);
                 if (delivered > 0)
                 {
-                    logger.LogInformation("已发送 {Count} 条 Channel 消息", delivered);
+                    logger.LogInformation("已确认送达 {Count} 条 Channel 消息", delivered);
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

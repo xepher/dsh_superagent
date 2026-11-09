@@ -13,6 +13,11 @@ public enum MessageStatus
 {
     Pending,
     Sending,
+
+    /// <summary>内容已交给 Provider 保存，等待目标客户端主动拉取；不代表对方已经收到。</summary>
+    AwaitingPull,
+
+    /// <summary>Provider 已确认送达。</summary>
     Sent,
     Failed,
     Dropped,
@@ -98,10 +103,21 @@ public sealed class ChannelMessage : Entity
         SendingAt = DateTimeOffset.UtcNow;
     }
 
-    public void MarkSent()
+    public void MarkDelivered()
     {
         Status = MessageStatus.Sent;
         SentAt = DateTimeOffset.UtcNow;
+        SendingAt = null;
+        LastError = null;
+    }
+
+    /// <summary>
+    /// The transport stored the content but the target must still pull it. Storing is not delivery,
+    /// so this status must not be retried and must not be reported as sent.
+    /// </summary>
+    public void MarkAwaitingPull()
+    {
+        Status = MessageStatus.AwaitingPull;
         SendingAt = null;
         LastError = null;
     }

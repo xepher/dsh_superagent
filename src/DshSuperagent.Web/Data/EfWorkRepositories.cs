@@ -38,6 +38,26 @@ public sealed class EfTicketRepository(AppDbContext db) : ITicketRepository
             subscription => subscription.ThreadId == threadId && subscription.DroppedAt == null,
             cancellationToken);
 
+    public Task<bool> HasUnreadInputsAsync(
+        Guid ticketId,
+        IReadOnlyCollection<Guid> excludedInputIds,
+        CancellationToken cancellationToken) =>
+        db.TicketInputs.AnyAsync(
+            input => input.TicketId == ticketId
+                && input.ReadAt == null
+                && !excludedInputIds.Contains(input.Id),
+            cancellationToken);
+
+    public Task<bool> HasQueuedAssignmentAsync(
+        Guid ticketId,
+        Guid excludedAssignmentId,
+        CancellationToken cancellationToken) =>
+        db.Assignments.AnyAsync(
+            assignment => assignment.TicketId == ticketId
+                && assignment.Id != excludedAssignmentId
+                && (assignment.Status == AssignmentStatus.Pending || assignment.Status == AssignmentStatus.Running),
+            cancellationToken);
+
     public async Task<Ticket?> GetLatestForThreadAsync(Guid threadId, CancellationToken cancellationToken)
     {
         var ticketId = await db.Subscriptions
@@ -84,6 +104,28 @@ public sealed class EfChannelRepository(AppDbContext db) : IChannelRepository
 
     public Task<ChannelMessage?> GetMessageAsync(Guid id, CancellationToken cancellationToken) =>
         db.ChannelMessages.FirstOrDefaultAsync(message => message.Id == id, cancellationToken);
+
+    public Task<bool> HasReplyAsync(Guid channelId, CancellationToken cancellationToken) =>
+        db.ChannelMessages.AnyAsync(
+            message => message.ChannelId == channelId
+                && (message.Status == MessageStatus.Sending
+                    || message.Status == MessageStatus.Sent
+                    || message.Status == MessageStatus.AwaitingPull),
+            cancellationToken);
+
+    public Task<bool> HasQueuedMessageAsync(Guid channelId, CancellationToken cancellationToken) =>
+        db.ChannelMessages.AnyAsync(
+            message => message.ChannelId == channelId
+                && (message.Status == MessageStatus.Pending || message.Status == MessageStatus.Sending),
+            cancellationToken);
+
+    public async Task<IReadOnlyList<Channel>> GetThreadChannelsAsync(
+        Guid threadId,
+        CancellationToken cancellationToken) =>
+        await db.Channels
+            .Where(channel => channel.ThreadId == threadId)
+            .OrderBy(channel => channel.CreatedAt)
+            .ToListAsync(cancellationToken);
 
     public async Task<IReadOnlyList<ChannelMessage>> GetDueMessagesAsync(
         int limit,

@@ -87,6 +87,7 @@ builder.Services.AddScoped<IConfigurationStore, EfConfigurationStore>();
 builder.Services.AddScoped<IPolicyAssessor, RuleAndModelPolicyAssessor>();
 builder.Services.AddScoped<InboundIngestionService>();
 builder.Services.AddScoped<EvalProcessor>();
+builder.Services.AddScoped<TicketReplyChannelSelector>();
 builder.Services.AddScoped<TicketExecutionService>();
 builder.Services.AddScoped<ChannelDeliveryService>();
 builder.Services.AddScoped<RepositoryScanService>();

@@ -31,7 +31,7 @@ DshSuperagent.Web（Host + Infrastructure + Panel）
 | Thread | `Thread` | `Subscription` | 最多一个活动 Eval；新 Trigger 进入下一批；订阅不授予权限。 |
 | Eval | `Eval` | `Decision` | 只有 Eval 能创建 Ticket；旧 Policy 版本会重新排队；observe 记录 would accept。 |
 | Ticket | `Ticket` | `Mandate`、`Input`、`Assignment`、`Report` | 阶段由 Report/Input/Assignment 决定；人工停止撤回 Mandate；结束后可被人工跟进恢复。 |
-| Channel | `Channel` | —（消息用独立实体） | 消息先存储再发送；失败退避重试；只有目标不存在才丢弃。 |
+| Channel | `Channel` | —（消息用独立实体） | 消息先存储再发送；失败退避重试；只有目标不存在才丢弃。地址分持久与一次性两种（`SingleUseReply`），一次性地址只能成功写入一次，第二次写入必须显式失败而不是静默成功。 |
 
 Trigger 是不可变的独立实体，按 `(SourceId, ExternalId)` 唯一。它不属于某个聚合的可变集合，因此重复回调不会重复创建 Ticket。
 
@@ -137,7 +137,8 @@ Policy 变化不会立即撤销运行中的 Mandate；只会让旧版本 Eval �
 - Trigger、Eval、Ticket、Input、Assignment、Report、ChannelMessage 都先写入数据库。
 - 队列只保存 ID；Worker 再按 ID 从数据库加载。
 - **入队发生在 `SaveChanges` 之后**，否则 Worker 可能读不到尚未提交的 Eval/Ticket。
-- Channel 消息先入库；`ChannelDeliveryWorker` 轮询待发送消息，失败按指数退避重试；三次失败后显式标记 dropped，卡在 Sending 的消息由恢复 Worker 重置。
+- Channel 消息先入库；`ChannelDeliveryWorker` 轮询待发送消息，失败按指数退避重试；三次失败后显式标记 dropped，卡在 Sending 的消息由恢复 Worker 重置。Provider 返回 `Delivered`（已确认送达）或 `AwaitingPull`（仅存入等待客户端拉取），后者记为 `AwaitingPull` 状态且不重试。
+- 回答的投递目标不是“建单时的地址”，而是该工单输入中**最新的、仍可写的应答地址**（`TicketReplyChannelSelector`）：一张工单会聚合多条提问，每条提问各带一个地址；一次性地址被用掉后，后续回答必须写到更新的地址，写不出去则记录 `DeliveryError`。同一线程里已经不可能再收到回答的一次性地址，在新回答发出后会以当前内容收尾，避免客户端一直停在“正在分析”。
 - 启动时恢复 queued Eval/Assignment，并重置被中断的 Running Eval/Assignment；内存队列对同一 WorkItem 去重，Worker 用 in-flight 集合防止并发重复执行。Running 超过 15 分钟的 Eval/Assignment 由恢复 Worker 重置；Eval 三次恢复仍无进展则变为 unavailable 并释放 Thread。
 
 EF 持久化细节：

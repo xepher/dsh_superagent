@@ -3,6 +3,7 @@ using DshSuperagent.Core.Storage;
 using DshSuperagent.Providers.WeCom;
 using System.Text.Json;
 using DshSuperagent.Domain.Authorization;
+using DshSuperagent.Domain.Channels;
 using DshSuperagent.Domain.Sources;
 using DshSuperagent.Domain.Work;
 using DshSuperagent.Web.Data;
@@ -264,5 +265,49 @@ public sealed class WeComFlowTests
         Assert.DoesNotContain("\\u", plain);
         using var ack = JsonDocument.Parse(plain);
         Assert.Equal("stream", ack.RootElement.GetProperty("msgtype").GetString());
+    }
+
+    [Fact]
+    public async Task Second_Question_In_Same_Thread_Is_Answered_On_Its_Own_Stream()
+    {
+        using var factory = new SuperagentTestFactory();
+        var http = factory.CreateClient();
+        var client = new IntegrationTestHelpers.TestClient(http, factory.Services);
+        var repositoryId = await IntegrationTestHelpers.CreateRepositoryAsync(
+            factory.Services,
+            "follow-up-repo",
+            "Docs/Page.cs",
+            "// 用户列表页的分页逻辑在 QueryObject 中实现\npublic sealed class QueryObject { }\n");
+        var sourceId = await IntegrationTestHelpers.CreateSourceAndPolicyAsync(factory.Services, repositoryId, AcceptMode.Auto, "u1");
+
+        var first = await IntegrationTestHelpers.SendMessageAsync(client, sourceId, "u1", "第一个问题：分页逻辑在哪里？", "wecom-first");
+        await IntegrationTestHelpers.WaitForStreamAsync(client, sourceId, first.Stream!.Id, TimeSpan.FromSeconds(25));
+
+        // 同一个线程的第二个问题会并入同一张工单，但企微的 stream 只能承载一条回复：
+        // 回答必须写回第二个问题自己的 stream，否则提问者永远停在“已收到，正在分析代码仓库…”。
+        var second = await IntegrationTestHelpers.SendMessageAsync(client, sourceId, "u1", "第二个问题：分页逻辑在哪里？", "wecom-second");
+        Assert.NotEqual(first.Stream.Id, second.Stream!.Id);
+
+        var answer = await IntegrationTestHelpers.WaitForStreamAsync(client, sourceId, second.Stream.Id, TimeSpan.FromSeconds(25));
+
+        Assert.True(answer.Finished);
+        Assert.Contains("分页", answer.Content);
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var ticket = await db.Tickets.AsNoTracking().SingleAsync();
+        Assert.Null(ticket.DeliveryError);
+
+        // 一张工单、两次 assignment（第二个问题一次），每次一 Report：多跑一次 Executor 会重复开 PR。
+        Assert.Equal(2, await db.Assignments.AsNoTracking().CountAsync(item => item.TicketId == ticket.Id));
+        Assert.Equal(2, await db.Reports.AsNoTracking().CountAsync(item => item.TicketId == ticket.Id));
+
+        // 第二个回答落在第二个问题自己的 Channel 上，且状态是“等待拉取”而不是“已送达”。
+        var messages = await db.ChannelMessages.AsNoTracking()
+            .Where(item => item.Purpose == MessagePurpose.Answer)
+            .ToListAsync();
+        Assert.Equal(2, messages.Count);
+        Assert.Equal(2, messages.Select(item => item.ChannelId).Distinct().Count());
+        Assert.All(messages, item => Assert.Equal(MessageStatus.AwaitingPull, item.Status));
     }
 }

@@ -26,7 +26,7 @@ public sealed class WorkRecoveryTests
         old.BeginSending();
         recent.BeginSending();
         missingTime.BeginSending();
-        sent.MarkSent();
+        sent.MarkDelivered();
         db.ChannelMessages.AddRange(old, recent, missingTime, pending, sent);
         db.Entry(old).Property(message => message.SendingAt).CurrentValue = now.AddMinutes(-10);
         db.Entry(recent).Property(message => message.SendingAt).CurrentValue = now.AddMinutes(-1);

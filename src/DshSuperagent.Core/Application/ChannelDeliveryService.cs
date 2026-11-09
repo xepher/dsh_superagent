@@ -1,16 +1,18 @@
 using DshSuperagent.Core.Providers.Sources;
 using DshSuperagent.Core.Storage;
 using DshSuperagent.Domain.Channels;
+using DshSuperagent.Domain.Sources;
 
 namespace DshSuperagent.Core.Application;
 
 /// <summary>
 /// Stored outgoing work. A message is persisted before sending, retried with backoff, and dropped
 /// only when its destination can never receive it. The domain stores the message; the provider
-/// owns transport.
+/// owns transport, including whether a write reaches the target or only stages it for a pull.
 /// </summary>
 public sealed class ChannelDeliveryService(
     IChannelRepository channels,
+    ITicketRepository tickets,
     ISourceRepository sources,
     SourceProviderRegistry providers,
     IUnitOfWork unitOfWork)
@@ -19,6 +21,7 @@ public sealed class ChannelDeliveryService(
     {
         var due = await channels.GetDueMessagesAsync(20, DateTimeOffset.UtcNow, cancellationToken);
         var delivered = 0;
+        var written = new HashSet<Guid>();
         foreach (var message in due)
         {
             var channel = await channels.GetAsync(message.ChannelId, cancellationToken);
@@ -55,18 +58,38 @@ public sealed class ChannelDeliveryService(
                 continue;
             }
 
+            var singleUse = provider.Capabilities.SingleUseReply;
+            if (singleUse
+                && (written.Contains(channel.Id) || await channels.HasReplyAsync(channel.Id, cancellationToken)))
+            {
+                await DropAsync(message, "一次性应答地址已被使用：该地址只能承载一条回复，第二条无法送达。", cancellationToken);
+                continue;
+            }
+
             message.BeginSending();
             try
             {
                 var address = ChannelAddress.FromJson(channel.AddressJson);
                 address.Data["deliveryId"] = message.Id.ToString("N");
-                await provider.SendAsync(
+                var outcome = await provider.SendAsync(
                     source,
                     address,
                     message.Content,
                     cancellationToken);
-                message.MarkSent();
-                delivered++;
+                if (outcome == DeliveryOutcome.Delivered)
+                {
+                    message.MarkDelivered();
+                    delivered++;
+                }
+                else
+                {
+                    message.MarkAwaitingPull();
+                }
+
+                if (singleUse)
+                {
+                    written.Add(channel.Id);
+                }
             }
             catch (ChannelDestinationGoneException ex)
             {
@@ -85,9 +108,70 @@ public sealed class ChannelDeliveryService(
                     message.RequeueAfterFailure();
                 }
             }
+
+            // Cleanup of superseded bubbles: best effort, and never allowed to change the outcome above.
+            if (singleUse && message.Status is MessageStatus.Sent or MessageStatus.AwaitingPull)
+            {
+                try
+                {
+                    await CloseSupersededAsync(provider, source, channel, cancellationToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // One failed cleanup must not discard the deliveries already recorded in this batch.
+                }
+            }
         }
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
         return delivered;
+    }
+
+    private async Task DropAsync(ChannelMessage message, string reason, CancellationToken cancellationToken)
+    {
+        message.MarkDropped(reason);
+        if (message.TicketId is { } ticketId
+            && await tickets.GetAsync(ticketId, cancellationToken) is { } ticket)
+        {
+            ticket.MarkReplyUndeliverable(reason);
+        }
+    }
+
+    /// <summary>
+    /// A single-use bubble older than the one now answered asked a question this ticket will never
+    /// answer. End it on whatever it already shows so its client stops waiting; newer bubbles belong
+    /// to questions still being answered and must be left alone.
+    /// </summary>
+    private async Task CloseSupersededAsync(
+        ISourceProvider provider,
+        Source source,
+        Channel answered,
+        CancellationToken cancellationToken)
+    {
+        var siblings = await channels.GetThreadChannelsAsync(answered.ThreadId, cancellationToken);
+        foreach (var sibling in siblings)
+        {
+            if (sibling.Id == answered.Id
+                || sibling.CreatedAt >= answered.CreatedAt
+                || sibling.Purpose == ChannelPurpose.None)
+            {
+                continue;
+            }
+
+            if (await channels.HasReplyAsync(sibling.Id, cancellationToken)
+                || await channels.HasQueuedMessageAsync(sibling.Id, cancellationToken))
+            {
+                continue;
+            }
+
+            try
+            {
+                await provider.CloseAsync(source, ChannelAddress.FromJson(sibling.AddressJson), cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Leaving one bubble waiting is preferable to failing the answer that was just written.
+            }
+        }
     }
 }

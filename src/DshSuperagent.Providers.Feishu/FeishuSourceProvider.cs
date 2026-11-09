@@ -321,7 +321,7 @@ public sealed class FeishuSourceProvider(IProviderCommandRunner commands) : IBac
             ReceivedAt: SourceJson.Time(message.String("create_time")));
     }
 
-    public async Task SendAsync(Source source, ChannelAddress address, string markdown, CancellationToken cancellationToken)
+    public async Task<DeliveryOutcome> SendAsync(Source source, ChannelAddress address, string markdown, CancellationToken cancellationToken)
     {
         if (address.Kind != ProviderId || address.Get("messageId") is not { Length: > 0 } message
             || !Regex.IsMatch(message, "^om_[A-Za-z0-9_-]+$") || address.Get("deliveryId") is not { Length: > 0 } delivery)
@@ -336,5 +336,7 @@ public sealed class FeishuSourceProvider(IProviderCommandRunner commands) : IBac
         {
             throw new ChannelDestinationGoneException("飞书目标消息已撤回或删除。");
         }
+
+        return DeliveryOutcome.Delivered;
     }
 }

@@ -63,6 +63,8 @@ public sealed class WeComProviderTests
 
     private sealed class FakeStreamStore : IStreamReplyStore
     {
+        public List<string> Finished { get; } = [];
+
         public Task<StreamReplyState?> GetAsync(string streamId, CancellationToken cancellationToken) =>
             Task.FromResult<StreamReplyState?>(null);
 
@@ -71,6 +73,12 @@ public sealed class WeComProviderTests
 
         public Task CompleteAsync(string streamId, string content, CancellationToken cancellationToken) =>
             Task.CompletedTask;
+
+        public Task FinishAsync(string streamId, CancellationToken cancellationToken)
+        {
+            Finished.Add(streamId);
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class RecordingHandler : HttpMessageHandler

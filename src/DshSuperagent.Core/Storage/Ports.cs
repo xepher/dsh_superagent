@@ -80,6 +80,18 @@ public interface ITicketRepository
     Task AddAsync(Ticket ticket, CancellationToken cancellationToken);
     Task<IReadOnlyList<Ticket>> GetTicketsForThreadAsync(Guid threadId, CancellationToken cancellationToken);
     Task<bool> HasAnyTicketForThreadAsync(Guid threadId, CancellationToken cancellationToken);
+
+    /// <summary>Read from storage, not an in-memory snapshot: a question may arrive mid-execution.</summary>
+    Task<bool> HasUnreadInputsAsync(
+        Guid ticketId,
+        IReadOnlyCollection<Guid> excludedInputIds,
+        CancellationToken cancellationToken);
+
+    /// <summary>Another assignment is already queued or running for this ticket, outside this scope.</summary>
+    Task<bool> HasQueuedAssignmentAsync(
+        Guid ticketId,
+        Guid excludedAssignmentId,
+        CancellationToken cancellationToken);
     Task<Ticket?> GetLatestForThreadAsync(Guid threadId, CancellationToken cancellationToken);
     Task<IReadOnlyList<Guid>> GetQueuedAssignmentTicketIdsAsync(CancellationToken cancellationToken);
     Task<IReadOnlyList<Ticket>> GetOpenTicketsAsync(CancellationToken cancellationToken);
@@ -91,6 +103,17 @@ public interface IChannelRepository
     Task AddAsync(Channel channel, CancellationToken cancellationToken);
     Task AddMessageAsync(ChannelMessage message, CancellationToken cancellationToken);
     Task<ChannelMessage?> GetMessageAsync(Guid id, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Whether the address already carries a reply. An in-flight send counts: a second write to the
+    /// same single-use address would race with it.
+    /// </summary>
+    Task<bool> HasReplyAsync(Guid channelId, CancellationToken cancellationToken);
+
+    /// <summary>Whether a queued message still needs this address.</summary>
+    Task<bool> HasQueuedMessageAsync(Guid channelId, CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<Channel>> GetThreadChannelsAsync(Guid threadId, CancellationToken cancellationToken);
     Task<IReadOnlyList<ChannelMessage>> GetDueMessagesAsync(int limit, DateTimeOffset now, CancellationToken cancellationToken);
     Task<IReadOnlyList<ChannelMessage>> GetMessagesForTicketAsync(Guid ticketId, CancellationToken cancellationToken);
 }

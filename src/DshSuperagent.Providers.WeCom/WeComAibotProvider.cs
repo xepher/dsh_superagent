@@ -48,7 +48,8 @@ public sealed class WeComAibotSourceProvider : ISourceProvider
         Callback: true,
         EncryptedCallback: true,
         Streaming: true,
-        ProactiveReply: true);
+        ProactiveReply: true,
+        SingleUseReply: true);
 
     public IReadOnlyList<ProviderConfigField> ConfigFields { get; } =
     [
@@ -102,7 +103,7 @@ public sealed class WeComAibotSourceProvider : ISourceProvider
         }
     }
 
-    public async Task SendAsync(
+    public async Task<DeliveryOutcome> SendAsync(
         Source source,
         ChannelAddress address,
         string markdown,
@@ -116,11 +117,17 @@ public sealed class WeComAibotSourceProvider : ISourceProvider
         var content = TruncateUtf8(markdown, MaxContentBytes);
         if (address.Get("stream_id") is { Length: > 0 } streamId)
         {
+            var existing = await _streamReplies.GetAsync(streamId, cancellationToken);
+            if (existing?.Finished == true)
+            {
+                throw new ChannelDestinationGoneException("企微流式消息已结束，不能再写入回复。");
+            }
+
             await _streamReplies.CompleteAsync(streamId, content, cancellationToken);
             _logger?.LogInformation(
-                "企微流式内容已就绪：Source {SourceId} Stream {StreamId}，等待企微刷新回调获取；此状态不代表客户端已收到",
+                "企微流式内容已存就绪：Source {SourceId} Stream {StreamId}，等待企微刷新回调拉取；此状态不代表客户端已收到",
                 source.Id, streamId);
-            return;
+            return DeliveryOutcome.AwaitingPull;
         }
 
         if (address.Get("response_url") is { Length: > 0 } responseUrl)
@@ -131,10 +138,27 @@ public sealed class WeComAibotSourceProvider : ISourceProvider
             }
 
             await PostResponseUrlAsync(settings, responseUrl, content, cancellationToken);
-            return;
+            return DeliveryOutcome.Delivered;
         }
 
         throw new InvalidOperationException("Channel 地址没有 stream_id 或 response_url，无法回复。");
+    }
+
+    public async Task CloseAsync(
+        Source source,
+        ChannelAddress address,
+        CancellationToken cancellationToken)
+    {
+        if (!string.Equals(address.Kind, ProviderId, StringComparison.OrdinalIgnoreCase)
+            || address.Get("stream_id") is not { Length: > 0 } streamId)
+        {
+            return;
+        }
+
+        await _streamReplies.FinishAsync(streamId, cancellationToken);
+        _logger?.LogInformation(
+            "企微陈旧的流式应答口已收尾：Source {SourceId} Stream {StreamId}，内容保持原样",
+            source.Id, streamId);
     }
 
     public Task<ProviderCheckResult> CheckAsync(Source source, CancellationToken cancellationToken)

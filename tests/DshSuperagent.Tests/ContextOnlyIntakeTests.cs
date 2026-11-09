@@ -87,5 +87,6 @@ public sealed class ContextOnlyIntakeTests
         public Task<StreamReplyState?> GetAsync(string id, CancellationToken token) => throw new InvalidOperationException("No stream in this scenario.");
         public Task SetRunningAsync(string id, string content, CancellationToken token) => throw new InvalidOperationException("No stream in this scenario.");
         public Task CompleteAsync(string id, string content, CancellationToken token) => throw new InvalidOperationException("No stream in this scenario.");
+        public Task FinishAsync(string id, CancellationToken token) => throw new InvalidOperationException("No stream in this scenario.");
     }
 }

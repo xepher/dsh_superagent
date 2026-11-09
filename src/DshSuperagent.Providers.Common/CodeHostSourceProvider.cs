@@ -419,7 +419,7 @@ public abstract class CodeHostSourceProvider : IPullRequestSourceProvider
         return match.Success && int.TryParse(match.Groups[1].Value, out var number) && number > 0 ? Address(source, number, url) : null;
     }
 
-    public async Task SendAsync(Source source, ChannelAddress address, string markdown, CancellationToken cancellationToken)
+    public async Task<DeliveryOutcome> SendAsync(Source source, ChannelAddress address, string markdown, CancellationToken cancellationToken)
     {
         if (address.Kind != Id || address.Get("repository") != Repository(source)
             || !int.TryParse(address.Get("number"), out var number) || number <= 0 || address.Get("deliveryId") is not { Length: > 0 } delivery)
@@ -445,7 +445,7 @@ public abstract class CodeHostSourceProvider : IPullRequestSourceProvider
         {
             await foreach (var response in PagesAsync(source, RepoPath(source, path), cancellationToken))
                 if (response.Data.EnumerateArray().Any(item => string.Equals(item.Child("user").String("login"), login, StringComparison.OrdinalIgnoreCase)
-                    && (root is null || item.String("in_reply_to_id") == root) && (item.String("body") ?? "").Contains(marker, StringComparison.Ordinal))) return;
+                    && (root is null || item.String("in_reply_to_id") == root) && (item.String("body") ?? "").Contains(marker, StringComparison.Ordinal))) return DeliveryOutcome.Delivered;
             var target = root is null ? path : $"pulls/{number}/comments/{root}/replies";
             await ApiAsync(source, "POST", RepoPath(source, target), new { body = markdown + "\n\n" + marker }, cancellationToken);
         }
@@ -453,5 +453,7 @@ public abstract class CodeHostSourceProvider : IPullRequestSourceProvider
         {
             throw new ChannelDestinationGoneException("目标会话已删除或锁定，无法回复。");
         }
+
+        return DeliveryOutcome.Delivered;
     }
 }

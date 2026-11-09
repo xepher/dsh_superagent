@@ -543,6 +543,13 @@ public sealed class Ticket : AggregateRoot
         }
     }
 
+    /// <summary>The ticket produced an answer that no reply address can still carry.</summary>
+    public void MarkReplyUndeliverable(string error)
+    {
+        DeliveryError = error;
+        UpdatedAt = DateTimeOffset.UtcNow;
+    }
+
     public void MarkInputDelivered(Guid inputId)
     {
         var input = _inputs.FirstOrDefault(item => item.Id == inputId);

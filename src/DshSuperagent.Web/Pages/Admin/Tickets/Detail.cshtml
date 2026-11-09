@@ -219,7 +219,7 @@
                 {
                     <tr>
                         <td><span class="badge neutral">@message.Purpose</span></td>
-                        <td><span class="badge @(message.Status == DshSuperagent.Domain.Channels.MessageStatus.Sent ? "success" : message.Status == DshSuperagent.Domain.Channels.MessageStatus.Failed ? "danger" : "warning")">@message.Status</span></td>
+                        <td><span class="badge @(StatusText.Badge(message.Status))">@StatusText.Label(message.Status)</span></td>
                         <td class="small">@message.Content</td>
                         <td>@message.Attempts</td>
                         <td class="muted nowrap">@message.CreatedAt.ToLocalTime().ToString("MM-dd HH:mm")</td>

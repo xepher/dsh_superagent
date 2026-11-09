@@ -21,6 +21,7 @@ public sealed class TicketExecutionService(
     IEnumerable<ITicketExecutor> executors,
     IWorkQueue queue,
     IDomainEventSink domainEvents,
+    TicketReplyChannelSelector replyChannels,
     IUnitOfWork unitOfWork)
 {
     public async Task ProcessAsync(Guid ticketId, CancellationToken cancellationToken)
@@ -102,10 +103,36 @@ public sealed class TicketExecutionService(
             result.ArtifactJson);
         ticket.RecordReport(report);
 
-        if (ticket.OriginChannelId is { } channelId && !string.IsNullOrWhiteSpace(result.ChannelContent ?? result.Summary))
+        var startAnotherAssignment = false;
+        if (ticket.Status == TicketStatus.Open
+            && await tickets.HasUnreadInputsAsync(
+                ticket.Id,
+                inputsToRead.Select(input => input.Id).ToList(),
+                cancellationToken)
+            && !await tickets.HasQueuedAssignmentAsync(ticket.Id, assignment.Id, cancellationToken)
+            && ticket.ActiveAssignment is null)
         {
-            var channel = await channels.GetAsync(channelId, cancellationToken);
-            if (channel is not null && channel.Purpose != ChannelPurpose.None)
+            ticket.StartAssignment(ticket.WorkKind == WorkKind.Fix ? "repository-fix" : "repository-question");
+            startAnotherAssignment = true;
+        }
+
+        var content = result.ChannelContent ?? result.Summary;
+        if (!string.IsNullOrWhiteSpace(content))
+        {
+            var channel = await replyChannels.ResolveAsync(ticket, inputsToRead, cancellationToken);
+            if (channel is null)
+            {
+                // A ticket without any chat address (a repository scan, for example) sends nothing by
+                // design; only a real conversation that can no longer be reached is a delivery failure.
+                var origin = ticket.OriginChannelId is { } originId
+                    ? await channels.GetAsync(originId, cancellationToken)
+                    : null;
+                if (origin is not null && origin.Purpose != ChannelPurpose.None)
+                {
+                    ticket.MarkReplyUndeliverable("没有可用的应答地址：提问对应的地址都已被使用，回答无法送达。");
+                }
+            }
+            else
             {
                 var purpose = result.Kind switch
                 {
@@ -118,16 +145,9 @@ public sealed class TicketExecutionService(
                         channel.Id,
                         ticket.Id,
                         purpose,
-                        result.ChannelContent ?? result.Summary),
+                        content),
                     cancellationToken);
             }
-        }
-
-        var startAnotherAssignment = false;
-        if (ticket.Status == TicketStatus.Open && ticket.Inputs.Any(input => input.ReadAt is null) && ticket.ActiveAssignment is null)
-        {
-            ticket.StartAssignment(ticket.WorkKind == WorkKind.Fix ? "repository-fix" : "repository-question");
-            startAnotherAssignment = true;
         }
 
         await domainEvents.DispatchAsync(touched, cancellationToken);

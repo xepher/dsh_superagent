@@ -30,7 +30,20 @@ public sealed record SourceCapabilities(
     bool EncryptedCallback = false,
     bool Streaming = false,
     bool ProactiveReply = false,
-    bool Scheduled = false);
+    bool Scheduled = false,
+    // A single-use reply address accepts exactly one successful write (a WeCom stream id or
+    // response_url is bound to the message that produced it). Durable addresses accept any number.
+    bool SingleUseReply = false);
+
+/// <summary>What the transport actually did with the content.</summary>
+public enum DeliveryOutcome
+{
+    /// <summary>The provider got confirmation that the target received the content.</summary>
+    Delivered,
+
+    /// <summary>The provider only stored the content for the target to pull; nobody has seen it yet.</summary>
+    AwaitingPull,
+}
 
 public sealed record ProviderCallbackRequest(
     string Method,
@@ -151,11 +164,20 @@ public interface ISourceProvider
         ProviderCallbackRequest request,
         CancellationToken cancellationToken);
 
-    Task SendAsync(
+    Task<DeliveryOutcome> SendAsync(
         Source source,
         ChannelAddress address,
         string markdown,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Retire a single-use reply address without inventing new content: the stream ends on whatever
+    /// it already holds. Durable addresses ignore this.
+    /// </summary>
+    Task CloseAsync(
+        Source source,
+        ChannelAddress address,
+        CancellationToken cancellationToken) => Task.CompletedTask;
 
     Task<ProviderCheckResult> CheckAsync(Source source, CancellationToken cancellationToken);
 }
@@ -167,6 +189,9 @@ public interface IStreamReplyStore
     Task<StreamReplyState?> GetAsync(string streamId, CancellationToken cancellationToken);
     Task SetRunningAsync(string streamId, string content, CancellationToken cancellationToken);
     Task CompleteAsync(string streamId, string content, CancellationToken cancellationToken);
+
+    /// <summary>End the stream on its current content so the client stops waiting.</summary>
+    Task FinishAsync(string streamId, CancellationToken cancellationToken);
 }
 
 public sealed class SourceProviderRegistry

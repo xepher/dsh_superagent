@@ -143,15 +143,30 @@ public sealed class SourceRuntime(IServiceScopeFactory scopes, Source source, IB
             await using var scope = scopes.CreateAsyncScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var candidates = await db.Tickets.Where(item => item.Status == TicketStatus.Open)
-                .Include(item => item.Reports).Include(item => item.Assignments).ToListAsync(cancellationToken);
+                .Include(item => item.Reports).Include(item => item.Assignments).Include(item => item.Inputs).ToListAsync(cancellationToken);
+            var selector = scope.ServiceProvider.GetRequiredService<TicketReplyChannelSelector>();
             foreach (var ticket in candidates.Where(item => item.Reports.Any(report => report.PullRequestUrl is { } link
                          && pullRequests.AddressForPullRequest(source, link)?.Get("threadKey") == threadKey)))
             {
                 ticket.End(merged ? TicketOutcome.Completed : TicketOutcome.Dropped);
-                if (ticket.OriginChannelId is { } channelId)
+                var content = merged ? $"修复 PR 已合并，工单已完成：{url}" : $"修复 PR 已关闭且未合并，工单已结束：{url}";
+                var replyChannel = await selector.ResolveAsync(ticket, ticket.Inputs, cancellationToken);
+                if (replyChannel is null)
                 {
-                    await db.ChannelMessages.AddAsync(new ChannelMessage(channelId, ticket.Id, MessagePurpose.Result,
-                        merged ? $"修复 PR 已合并，工单已完成：{url}" : $"修复 PR 已关闭且未合并，工单已结束：{url}"), cancellationToken);
+                    // A lifecycle notice that cannot go anywhere is noise once the answer itself was
+                    // delivered; only a ticket that never reached the requester is a delivery failure.
+                    var answered = await db.ChannelMessages.AnyAsync(
+                        message => message.TicketId == ticket.Id
+                            && (message.Status == MessageStatus.Sent || message.Status == MessageStatus.AwaitingPull),
+                        cancellationToken);
+                    if (!answered)
+                    {
+                        ticket.MarkReplyUndeliverable("没有可用的应答地址：PR 状态通知无法送达。");
+                    }
+                }
+                else
+                {
+                    await db.ChannelMessages.AddAsync(new ChannelMessage(replyChannel.Id, ticket.Id, MessagePurpose.Result, content), cancellationToken);
                 }
             }
             await db.SaveChangesAsync(cancellationToken);

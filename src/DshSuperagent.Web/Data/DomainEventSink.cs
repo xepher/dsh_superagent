@@ -58,6 +58,20 @@ public sealed class EfStreamReplyStore(IDbContextFactory<AppDbContext> dbFactory
         return reply is null ? null : new StreamReplyState(reply.StreamId, reply.Finished, reply.Content);
     }
 
+    public async Task FinishAsync(string streamId, CancellationToken cancellationToken)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        var reply = await db.StreamReplies.FirstOrDefaultAsync(item => item.StreamId == streamId, cancellationToken);
+        if (reply is null || reply.Finished)
+        {
+            return;
+        }
+
+        reply.Finished = true;
+        reply.UpdatedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task SetRunningAsync(string streamId, string content, CancellationToken cancellationToken)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
